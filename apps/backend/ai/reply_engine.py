@@ -26,7 +26,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from .classifier import ClassificationResult, CommentClassifier
 from .fragrance_kb import FragranceKnowledgeBase, FragranceRecord
 from .prompt_guard import PromptGuard
-from .template_catalog import TemplateCatalog
+from .template_catalog import DynamicHumanComposer, TemplateCatalog
 
 
 CANONICAL_SYSTEM_PROMPT_V4 = (
@@ -456,7 +456,18 @@ class ReplyEngine:
             if fragrance is not None:
                 factual_claims.append(f"scent_family: {fragrance.scent_family}")
 
-        # 8. Select diverse template variation or invoke optional Gemini Flash adapter within budget
+        # 8. Dynamically scrape viewer's multi-part question & in-app KB/Vault data, then mix & merge 62,400+ human variations
+        dynamic_clause, scraped_tags = DynamicHumanComposer.scrape_and_compose_clause(
+            comment_text=comment_text,
+            primary_bucket=bucket,
+            fragrance=fragrance,
+            context=context,
+        )
+        if dynamic_clause:
+            context["dynamic_scraped_clause"] = dynamic_clause
+            factual_claims.extend(scraped_tags)
+            audit.append(f"DynamicInAppScrape:{','.join(scraped_tags)}")
+
         seed_key = f"{author_handle}:{comment_text[:64]}:{post_sku or ''}"
         reply_text, dup_sim, template_id = self.catalog.select_diverse_reply(
             intent_bucket=bucket,

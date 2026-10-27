@@ -154,14 +154,14 @@ class TestAgentCharlieAIEngine(unittest.TestCase):
         self.assertIn("[REDACTED_PHONE]", redacted)
 
     # -------------------------------------------------------------------------
-    # 3. 1,200+ Template Catalog Diversity & Near-Duplicate Guard (FR-007)
+    # 3. 60,000+ Template Catalog Diversity, Dynamic Scraping & Near-Duplicate Guard (FR-007)
     # -------------------------------------------------------------------------
     def test_template_catalog_exceeds_1200_variations_and_prevents_duplicates(self) -> None:
         total = self.catalog.total_variation_count()
         self.assertGreaterEqual(
             total,
-            1200,
-            f"Expected at least 1,200 template variations, got {total}",
+            60000,
+            f"Expected at least 60,000 dynamic human template variations, got {total}",
         )
 
         # Generate 25 sequential compliment replies and verify no two consecutive replies are identical
@@ -179,6 +179,21 @@ class TestAgentCharlieAIEngine(unittest.TestCase):
 
         unique_count = len(set(generated))
         self.assertGreaterEqual(unique_count, 20)
+
+        # Verify dynamic multi-intent in-app scraping & clause mixing on a complex comment
+        complex_out = self.engine.generate_reply(
+            "How long does Empyrean Velvet Oud last in cold winter rain, how much does it cost in £, and does the rose or oud stand out?",
+            post_sku="EMP-VELVET-OUD-50",
+            author_handle="@complex_question_viewer",
+        )
+        self.assertIsNotNone(complex_out.reply_candidate)
+        reply_lower = (complex_out.reply_candidate or "").lower()
+        self.assertIn("8 to 10 hours", reply_lower)
+        self.assertIn("£145", reply_lower)
+        self.assertTrue("rose" in reply_lower or "oud" in reply_lower)
+        self.assertTrue(any(c.startswith("scraped_note:") for c in complex_out.factual_claims))
+        self.assertIn("merged_subintent:price", complex_out.factual_claims)
+        self.assertIn("scraped_context:season_or_occasion", complex_out.factual_claims)
 
     # -------------------------------------------------------------------------
     # 4. Grounded Longevity: Measured vs Unmeasured & Experian vs Empyrean (FR-008, FR-019)
