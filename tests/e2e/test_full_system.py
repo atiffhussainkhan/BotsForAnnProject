@@ -350,6 +350,51 @@ class TestFullSystemE2E(unittest.TestCase):
         self.assertGreaterEqual(tick_res["overview"]["accounts"]["instagram"]["auto_replies_sent"], 1)
         self.assertGreaterEqual(tick_res["overview"]["accounts"]["tiktok"]["auto_replies_sent"], 1)
 
+    def test_10_friend_groups_auto_comment_bot(self) -> None:
+        # 1. Add a friend to an Auto-Comment Group
+        add_status, add_res = self._post_json(
+            "/api/v1/friends/groups/add-member",
+            {
+                "group_id": "GRP-CLOSE-FRIENDS",
+                "handle": "@amberandiris",
+                "display_name": "Chloe",
+                "platform": "instagram",
+                "favorite_notes": "iris, vanilla, cardamom",
+                "auto_comment_enabled": True,
+            },
+        )
+        self.assertEqual(add_status, 200)
+        fg_summary = add_res["overview"]["friend_groups"]
+        self.assertGreaterEqual(fg_summary["friend_vocabulary_size"], 50000)
+
+        # 2. Scrape & auto-comment on a single friend video
+        eng_status, eng_res = self._post_json(
+            "/api/v1/friends/auto-engage",
+            {
+                "friend_handle": "@amberandiris",
+                "friend_display_name": "Chloe",
+                "platform": "instagram",
+                "video_url": "https://www.instagram.com/p/DC_Chloe_Iris/",
+                "video_title": "Testing 'Empyrean Celestial Iris' for Autumn",
+                "video_description": "Layering creamy iris, pistachio, and warm vanilla tonight!",
+                "group_id": "GRP-CLOSE-FRIENDS",
+                "auto_send": True,
+            },
+        )
+        self.assertEqual(eng_status, 200)
+        ac = eng_res["auto_comment"]
+        self.assertEqual(ac["status"], "AUTO_COMMENTED_ON_FRIEND_VIDEO")
+        self.assertIn("iris", ac["scraped_notes"])
+        self.assertIn("Chloe", ac["comment_posted"])
+
+        # 3. Run full Friend Group Auto-Comment Cycle across all groups
+        cyc_status, cyc_res = self._post_json(
+            "/api/v1/friends/auto-engage",
+            {"mode": "group_cycle"},
+        )
+        self.assertEqual(cyc_status, 200)
+        self.assertGreaterEqual(cyc_res["count"], 3)
+
 
 if __name__ == "__main__":
     unittest.main()

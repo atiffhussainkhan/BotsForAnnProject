@@ -12,6 +12,12 @@ from .draft_generator import (
     CreatorNotificationCard,
     extract_fragrance_signals,
 )
+from .friend_group_engager import (
+    FriendAutoCommentResult,
+    FriendGroup,
+    FriendGroupAutoEngager,
+    FriendGroupMember,
+)
 from .watchlist import (
     BulkAutoCommentForbiddenError,
     CreatorWatchlistEntry,
@@ -30,6 +36,10 @@ __all__ = [
     "CreatorWatchlistEntry",
     "CreatorWatchlistManager",
     "FORBIDDEN_ACCESS_ROUTES",
+    "FriendAutoCommentResult",
+    "FriendGroup",
+    "FriendGroupAutoEngager",
+    "FriendGroupMember",
     "FriendPostEvent",
     "PERMITTED_ACCESS_ROUTES",
     "PERMITTED_INTERACTION_METHODS",

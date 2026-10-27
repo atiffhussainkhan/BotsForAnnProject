@@ -653,35 +653,106 @@ Item: Empyrean Parfums Oud & Silk Extrait 100ml - £185.00 GBP</textarea>
         </div>
       </section>
 
-      <!-- SCREEN 6: FRIENDS & CREATOR ENGAGEMENT ASSISTANT -->
+      <!-- SCREEN 6: FRIENDS & CREATOR GROUPS AUTO-COMMENT BOT -->
       <section id="screen-friends" class="screen">
-        <div class="card">
-          <h2>Friends & Creator Engagement Assistant (FR-011..FR-017)</h2>
-          <p style="margin-bottom:12px;">
-            <strong>Account-Safety Guarantee:</strong> Zero following-list scraping and zero automated mass commenting (`THIRD_PARTY_AUTOCOMMENT=false`). Generates 2–4 warm, contextual draft comments for your shortlisted creator friends so you can copy in one tap and post manually in the official app.
-          </p>
-          <div class="grid-3">
-            <div class="form-group">
-              <label for="friendHandle">Creator Friend Handle</label>
-              <input id="friendHandle" value="@scentbyclaire" />
+        <div class="card" style="background: var(--bg-blush);">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+            <div>
+              <h2>Friends & Creator Groups Auto-Comment Bot (54,000+ Friend Vocabulary)</h2>
+              <p style="font-size:0.88rem;">
+                Automatically scrapes your friends' & engagement-group videos for perfume names and scent notes, mixes a 100% unique human comment from <strong>54,000+ friend-specific variations</strong> with human-like staggered jitter delays (<code>18s–75s</code>), and auto-comments on their videos!
+              </p>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button type="button" class="btn-success" onclick="runFriendGroupAutoCommentCycle()">
+                🚀 Auto-Comment on All Friends & Group Videos Now
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <!-- Add Friend to Auto-Engagement Group -->
+          <div class="card">
+            <h3>➕ Add Friend to Auto-Comment Group</h3>
+            <div class="grid-2" style="gap:10px; margin-bottom:8px;">
+              <div class="form-group" style="margin-bottom:0;">
+                <label for="groupSelect">Friend Group / Pod</label>
+                <select id="groupSelect">
+                  <option value="GRP-CLOSE-FRIENDS">Close UK Fragrance Friends</option>
+                  <option value="GRP-CREATOR-POD">Daily PerfumeTok & IG Engagement Group</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin-bottom:0;">
+                <label for="newFriendPlatform">Platform</label>
+                <select id="newFriendPlatform">
+                  <option value="instagram">Instagram</option>
+                  <option value="tiktok">TikTok</option>
+                </select>
+              </div>
+            </div>
+            <div class="grid-2" style="gap:10px; margin-bottom:8px;">
+              <div class="form-group" style="margin-bottom:0;">
+                <label for="newFriendHandle">Friend Handle</label>
+                <input id="newFriendHandle" value="@amberandiris" />
+              </div>
+              <div class="form-group" style="margin-bottom:0;">
+                <label for="newFriendName">Friend First Name</label>
+                <input id="newFriendName" value="Chloe" />
+              </div>
             </div>
             <div class="form-group">
-              <label for="friendPlatform">Platform</label>
-              <select id="friendPlatform">
-                <option value="instagram">Instagram</option>
-                <option value="tiktok">TikTok</option>
-              </select>
+              <label for="newFriendNotes">Friend's Favourite Notes (Used for Smart Context)</label>
+              <input id="newFriendNotes" value="iris, vanilla, cardamom, white musk" />
+            </div>
+            <button type="button" class="btn-primary" onclick="addFriendToAutoGroup()">
+              ✅ Add Friend to Auto-Comment Group
+            </button>
+          </div>
+
+          <!-- Scrape & Auto-Comment on Specific Friend Video -->
+          <div class="card">
+            <h3>💬 Auto-Comment on a Friend's Video</h3>
+            <div class="grid-2" style="gap:10px; margin-bottom:8px;">
+              <div class="form-group" style="margin-bottom:0;">
+                <label for="friendHandle">Creator Friend Handle</label>
+                <input id="friendHandle" value="@scentbyclaire" />
+              </div>
+              <div class="form-group" style="margin-bottom:0;">
+                <label for="friendPlatform">Platform</label>
+                <select id="friendPlatform">
+                  <option value="instagram">Instagram</option>
+                  <option value="tiktok">TikTok</option>
+                </select>
+              </div>
             </div>
             <div class="form-group">
-              <label for="friendUrl">Shared Post URL</label>
+              <label for="friendUrl">Friend's Video URL</label>
               <input id="friendUrl" value="https://www.instagram.com/p/DC99VelvetIris/" />
             </div>
+            <div class="form-group">
+              <label for="friendDesc">Friend's Video Caption / Fragrance Notes (Bot Scrapes This Automatically)</label>
+              <input id="friendDesc" value="Layering 'Empyrean Celestial Iris' with creamy pistachio, cardamom, and warm vanilla for autumn evenings in London" />
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button type="button" class="btn-primary" onclick="autoEngageSingleFriendVideo()">
+                🤖 Scrape Video & Auto-Comment Now
+              </button>
+              <button type="button" class="btn-secondary" onclick="submitFriendPost()">
+                Generate 3 Drafts Only
+              </button>
+            </div>
           </div>
-          <div class="form-group">
-            <label for="friendDesc">Post Title / Fragrance Notes Mentioned</label>
-            <input id="friendDesc" value="Layering creamy iris, pistachio, and warm vanilla for autumn evenings in London" />
-          </div>
-          <button type="button" class="btn-primary" onclick="submitFriendPost()">Generate 3 Contextual Friend Comment Drafts</button>
+        </div>
+
+        <div class="card">
+          <h3>👥 Active Friend Groups & Auto-Comment Pods</h3>
+          <div id="friendGroupsContainer" class="grid-2"></div>
+        </div>
+
+        <div class="card">
+          <h3>⚡ Live Auto-Commented Friend Videos Feed</h3>
+          <div id="friendAutoCommentsContainer"></div>
         </div>
 
         <div id="friendsNotificationsContainer"></div>
@@ -1352,6 +1423,48 @@ Item: Empyrean Parfums Oud & Silk Extrait 100ml - £185.00 GBP</textarea>
     }
 
     function renderFriends() {
+      const grpContainer = document.getElementById('friendGroupsContainer');
+      const autoContainer = document.getElementById('friendAutoCommentsContainer');
+      const fg = APP_STATE.friend_groups;
+      if (fg && grpContainer) {
+        grpContainer.innerHTML = (fg.groups || []).map(g => {
+          const membersHtml = (g.members || []).map(m =>
+            `<span class="badge badge-neutral" style="margin:2px;">${m.handle} (${m.platform.toUpperCase()}) • Auto: ${m.auto_comment_enabled ? 'ON' : 'OFF'} • Sent: ${m.comments_posted_count || 0}</span>`
+          ).join(' ');
+          return `
+            <div class="card" style="margin-bottom:8px;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h4>${g.group_name}</h4>
+                <span class="badge ${g.auto_engage_enabled ? 'badge-green' : 'badge-amber'}">${g.auto_engage_enabled ? 'Auto-Comment ACTIVE' : 'Paused'}</span>
+              </div>
+              <p style="font-size:0.82rem; color:var(--text-muted); margin:6px 0;">${g.description} (Human Jitter: ${g.min_jitter_seconds}s–${g.max_jitter_seconds}s)</p>
+              <div>${membersHtml}</div>
+            </div>
+          `;
+        }).join('');
+      }
+      if (fg && autoContainer) {
+        autoContainer.innerHTML = (fg.recent_auto_comments || []).map(ac => `
+          <div class="card" style="margin-bottom:10px; border-left:4px solid var(--green-safe);">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+              <div><strong>${ac.friend_display_name} (${ac.friend_handle})</strong> • <span class="badge badge-neutral">${ac.platform.toUpperCase()}</span> • Group: <em>${ac.group_name}</em></div>
+              <div>
+                <span class="badge badge-neutral">Variation: ${ac.variation_id}</span>
+                <span class="badge badge-neutral">Human Delay: ${ac.jitter_delay_seconds}s</span>
+                <span class="badge badge-green">${ac.status}</span>
+              </div>
+            </div>
+            <div style="font-size:0.83rem; color:var(--text-muted); margin-top:6px;">
+              <strong>Friend Video:</strong> ${ac.video_title} — <em>"${ac.video_description}"</em><br/>
+              <strong>Scraped from Friend's Video:</strong> Perfume: <code>${ac.scraped_perfume}</code> | Notes: <code>${(ac.scraped_notes || []).join(', ')}</code>
+            </div>
+            <div style="margin-top:8px; padding:10px; background:var(--bg-blush); border-radius:8px;">
+              <strong>💬 Auto-Posted Comment on Friend's Video:</strong><br/>"${ac.comment_posted}"
+            </div>
+          </div>
+        `).join('');
+      }
+
       const container = document.getElementById('friendsNotificationsContainer');
       if (!APP_STATE.creator_notifications) return;
       container.innerHTML = APP_STATE.creator_notifications.map(card => {
@@ -1514,6 +1627,62 @@ Item: Empyrean Parfums Oud & Silk Extrait 100ml - £185.00 GBP</textarea>
       APP_STATE = data.overview;
       renderAll();
       showToast('Verified merchant as Empyrean Parfums — Status upgraded to VERIFIED_SELF_PURCHASE!');
+    }
+
+    async function addFriendToAutoGroup() {
+      const payload = {
+        group_id: document.getElementById('groupSelect').value,
+        handle: document.getElementById('newFriendHandle').value,
+        display_name: document.getElementById('newFriendName').value,
+        platform: document.getElementById('newFriendPlatform').value,
+        favorite_notes: document.getElementById('newFriendNotes').value,
+        auto_comment_enabled: true
+      };
+      const data = await apiFetch('/api/v1/friends/groups/add-member', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      if (data.overview) {
+        APP_STATE = data.overview;
+        renderAll();
+      }
+      showToast('✅ Added ' + payload.handle + ' to Auto-Comment Group!');
+    }
+
+    async function autoEngageSingleFriendVideo() {
+      const payload = {
+        friend_handle: document.getElementById('friendHandle').value,
+        platform: document.getElementById('friendPlatform').value,
+        video_url: document.getElementById('friendUrl').value,
+        video_title: 'Friend Perfume Video',
+        video_description: document.getElementById('friendDesc').value,
+        group_id: document.getElementById('groupSelect') ? document.getElementById('groupSelect').value : 'GRP-CLOSE-FRIENDS',
+        auto_send: true
+      };
+      const data = await apiFetch('/api/v1/friends/auto-engage', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      if (data.overview) {
+        APP_STATE = data.overview;
+        renderAll();
+      }
+      showToast('💬 Scraped friend video & auto-posted unique comment on ' + payload.friend_handle + '!');
+    }
+
+    async function runFriendGroupAutoCommentCycle() {
+      const data = await apiFetch('/api/v1/friends/auto-engage', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({mode: 'group_cycle'})
+      });
+      if (data.overview) {
+        APP_STATE = data.overview;
+        renderAll();
+      }
+      showToast('🚀 Auto-commented on ' + (data.count || 3) + ' friend & group videos!');
     }
 
     async function submitFriendPost() {

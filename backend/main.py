@@ -56,6 +56,7 @@ from apps.backend.creator_assistant import (
     CreatorDraftGenerator,
     CreatorWatchlistEntry,
     CreatorWatchlistManager,
+    FriendGroupAutoEngager,
     FriendPostEvent,
 )
 from apps.backend.integrations.instagram import InstagramAdapter, InstagramWebhookVerifier
@@ -155,6 +156,8 @@ class AnnRevealsApplication:
         )
         self.watchlist_manager = CreatorWatchlistManager(daily_notification_cap=10)
         self.draft_generator = CreatorDraftGenerator(watchlist_manager=self.watchlist_manager)
+        self.friend_group_engager = FriendGroupAutoEngager()
+        self.friend_group_engager.run_group_auto_comment_cycle(emergency_stop=False)
 
         # Agent Delta: Verified Purchases Vault, Disclosure Engine, Content Studio & Appeals
         self.redactor = ReceiptRedactor()
@@ -701,6 +704,7 @@ class AnnRevealsApplication:
             "contradiction_alerts": _to_jsonable(self.vault.contradiction_alerts),
             "creator_watchlist": _to_jsonable(self.watchlist_manager.list_creators()),
             "creator_notifications": _to_jsonable(self._creator_notifications),
+            "friend_groups": _to_jsonable(self.friend_group_engager.get_summary()),
             "appeals": appeals_list,
             "frozen_posts": list(self.appeals_tracker.frozen_posts),
             "sample_cases": {
@@ -849,11 +853,17 @@ class AnnRevealsApplication:
             self.account_configs[plat]["last_sync_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             processed.append(res)
 
+        friend_auto_results = self.friend_group_engager.run_group_auto_comment_cycle(
+            emergency_stop=self.kill_switch.emergency_stop_active
+        )
+
         return {
             "status": "ok",
             "cycle": idx,
             "processed_count": len(processed),
             "processed": processed,
+            "friend_videos_auto_commented_count": len(friend_auto_results),
+            "friend_videos_auto_commented": _to_jsonable(friend_auto_results),
         }
 
     def dispatch_http(
@@ -1257,6 +1267,86 @@ class AnnRevealsApplication:
                 return (
                     200,
                     _to_jsonable({"status": "ok", "cycle": cycle_res, "overview": self.get_dashboard_overview()}),
+                    "application/json; charset=utf-8",
+                )
+
+            if clean_path == "/api/v1/friends/auto-engage":
+                if payload.get("mode") == "group_cycle":
+                    batch = self.friend_group_engager.run_group_auto_comment_cycle(
+                        group_id=payload.get("group_id"),
+                        emergency_stop=self.kill_switch.emergency_stop_active,
+                    )
+                    self.db.log_audit_event(
+                        "FRIEND_GROUP_AUTOBOT",
+                        "FRIEND_GROUP_AUTO_COMMENT_CYCLE",
+                        str(payload.get("group_id") or "ALL_GROUPS"),
+                        f"Auto-commented on {len(batch)} friend videos",
+                    )
+                    return (
+                        200,
+                        _to_jsonable(
+                            {
+                                "status": "ok",
+                                "auto_comments": batch,
+                                "count": len(batch),
+                                "overview": self.get_dashboard_overview(),
+                            }
+                        ),
+                        "application/json; charset=utf-8",
+                    )
+
+                single = self.friend_group_engager.auto_comment_on_friend_video(
+                    friend_handle=str(payload.get("friend_handle", "@scentbyclaire")),
+                    friend_display_name=str(payload.get("friend_display_name", "")),
+                    platform=str(payload.get("platform", "instagram")),
+                    video_url=str(payload.get("video_url", "https://www.instagram.com/p/DC_FriendVideo/")),
+                    video_title=str(payload.get("video_title", "Cosy Autumn Vanilla & Iris Layering")),
+                    video_description=str(
+                        payload.get(
+                            "video_description",
+                            "Testing Empyrean Celestial Iris layered with warm vanilla, cardamom, and white suede!",
+                        )
+                    ),
+                    group_id=str(payload.get("group_id", "GRP-CLOSE-FRIENDS")),
+                    auto_send=bool(payload.get("auto_send", True)),
+                    emergency_stop=self.kill_switch.emergency_stop_active,
+                )
+                self.db.log_audit_event(
+                    "FRIEND_GROUP_AUTOBOT",
+                    "AUTO_COMMENT_FRIEND_VIDEO",
+                    f"{single.platform}:{single.friend_handle}",
+                    f"status={single.status} var={single.variation_id}",
+                )
+                return (
+                    200,
+                    _to_jsonable(
+                        {
+                            "status": "ok",
+                            "auto_comment": single,
+                            "overview": self.get_dashboard_overview(),
+                        }
+                    ),
+                    "application/json; charset=utf-8",
+                )
+
+            if clean_path == "/api/v1/friends/groups/add-member":
+                grp = self.friend_group_engager.add_friend_to_group(
+                    group_id=str(payload.get("group_id", "GRP-CLOSE-FRIENDS")),
+                    handle=str(payload.get("handle", "@newperfumefriend")),
+                    display_name=str(payload.get("display_name", "")),
+                    platform=str(payload.get("platform", "instagram")),
+                    favorite_notes=str(payload.get("favorite_notes", "vanilla, iris, oud, amber")),
+                    auto_comment_enabled=bool(payload.get("auto_comment_enabled", True)),
+                )
+                self.db.log_audit_event(
+                    "OWNER",
+                    "FRIEND_ADDED_TO_AUTO_GROUP",
+                    grp.group_id,
+                    f"Added {payload.get('handle')} (members={len(grp.members)})",
+                )
+                return (
+                    200,
+                    _to_jsonable({"status": "ok", "group": grp, "overview": self.get_dashboard_overview()}),
                     "application/json; charset=utf-8",
                 )
 
