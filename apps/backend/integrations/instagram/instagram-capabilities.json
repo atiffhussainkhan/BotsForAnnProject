@@ -1,0 +1,112 @@
+{
+  "provider": "instagram",
+  "display_name": "Instagram (Meta Graph API v21.0 — Instagram Login)",
+  "handle": "@annreveals",
+  "version": "4.0.0",
+  "verified_date": "2026-10-27",
+  "auth_strategy": {
+    "primary": "instagram_api_with_instagram_login",
+    "fallback": "instagram_api_with_facebook_login",
+    "requires_professional_account": true,
+    "allowed_account_types": ["CREATOR", "MEDIA_CREATOR", "BUSINESS"],
+    "requires_facebook_page_for_primary": false,
+    "oauth_authorize_url": "https://www.instagram.com/oauth/authorize",
+    "oauth_token_url": "https://api.instagram.com/oauth/access_token",
+    "graph_base_url": "https://graph.instagram.com/v21.0",
+    "required_scopes": [
+      "instagram_business_basic",
+      "instagram_business_manage_comments"
+    ],
+    "optional_scopes": [
+      "instagram_business_manage_messages",
+      "instagram_business_content_publish"
+    ]
+  },
+  "feature_flags": {
+    "INSTAGRAM_WRITE_ENABLED": false,
+    "THIRD_PARTY_AUTOCOMMENT": false,
+    "DEFAULT_AUTOMATION_MODE": "DRAFT"
+  },
+  "capabilities": {
+    "get_owned_profile": {
+      "supported": true,
+      "endpoint": "GET /v21.0/me",
+      "required_scopes": ["instagram_business_basic"],
+      "write_operation": false
+    },
+    "get_owned_posts": {
+      "supported": true,
+      "endpoint": "GET /v21.0/{ig-user-id}/media",
+      "required_scopes": ["instagram_business_basic"],
+      "write_operation": false
+    },
+    "list_owned_comments": {
+      "supported": true,
+      "endpoint": "GET /v21.0/{ig-media-id}/comments",
+      "replies_endpoint": "GET /v21.0/{ig-comment-id}/replies",
+      "required_scopes": ["instagram_business_basic", "instagram_business_manage_comments"],
+      "write_operation": false
+    },
+    "reply_to_owned_comment": {
+      "supported": true,
+      "endpoint": "POST /v21.0/{ig-comment-id}/replies",
+      "required_scopes": ["instagram_business_manage_comments"],
+      "write_operation": true,
+      "requires_write_flag": true,
+      "supports_timeout_reconciliation": true,
+      "enforces_self_reply_block": true
+    },
+    "create_comment_on_owned_post": {
+      "supported": true,
+      "endpoint": "POST /v21.0/{ig-media-id}/comments",
+      "required_scopes": ["instagram_business_manage_comments"],
+      "write_operation": true,
+      "requires_write_flag": true,
+      "supports_timeout_reconciliation": true,
+      "enforces_anti_spam_uniqueness": true
+    },
+    "subscribe_to_webhooks": {
+      "supported": true,
+      "endpoint": "POST /v21.0/{ig-user-id}/subscribed_apps",
+      "webhook_fields": ["comments"],
+      "signature_header": "X-Hub-Signature-256",
+      "hash_algorithm": "HMAC-SHA256"
+    },
+    "refresh_auth": {
+      "supported": true,
+      "endpoint": "GET /refresh_access_token?grant_type=ig_refresh_token",
+      "token_ttl_seconds": 5184000
+    },
+    "publish_post": {
+      "supported": true,
+      "enabled_by_default": false,
+      "endpoint": "POST /v21.0/{ig-user-id}/media & POST /v21.0/{ig-user-id}/media_publish",
+      "required_scopes": ["instagram_business_content_publish"],
+      "fallback": "one_tap_copy_caption_and_open_instagram"
+    },
+    "get_post_publication_status": {
+      "supported": true,
+      "endpoint": "GET /v21.0/{ig-container-id}?fields=id,status_code,status",
+      "required_scopes": ["instagram_business_content_publish"]
+    },
+    "get_inbox_messages": {
+      "supported": true,
+      "enabled_by_default": false,
+      "endpoint": "GET /v21.0/me/conversations?platform=instagram",
+      "required_scopes": ["instagram_business_manage_messages"],
+      "fallback": "manual_native_inbox"
+    },
+    "get_following_posts": {
+      "supported": false,
+      "permanently_blocked": true,
+      "reason": "Meta Instagram Platform API does not expose an account's following feed. Scraping is strictly forbidden.",
+      "fallback": "owner_curated_creator_shortlist_and_shared_urls"
+    },
+    "comment_on_nonowned_post": {
+      "supported": false,
+      "permanently_blocked": true,
+      "reason": "Meta Instagram Platform API does not permit automated commenting on non-owned third-party posts.",
+      "fallback": "owner_in_the_loop_draft_with_one_tap_copy"
+    }
+  }
+}

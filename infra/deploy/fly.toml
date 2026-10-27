@@ -1,0 +1,44 @@
+# Fly.io Deployment Manifest for Ann Reveals AI Manager (v4.0)
+# Region: lhr (London, UK) for low-latency UK operations & UK GDPR residency
+# Target Cloud Spend: ~£5.50/month (shared-cpu-1x, 512MB RAM + 2GB volume)
+
+app = "ann-reveals-ai-manager"
+primary_region = "lhr"
+
+[build]
+  dockerfile = "../docker/Dockerfile"
+
+[env]
+  APP_ENV = "production"
+  PORT = "8000"
+  OWNER_HANDLE = "@annreveals"
+  TIKTOK_WRITE_ENABLED = "false"
+  INSTAGRAM_WRITE_ENABLED = "false"
+  THIRD_PARTY_AUTOCOMMENT = "false"
+  MONTHLY_BUDGET_CAP_GBP = "30.00"
+  AI_MONTHLY_SUBCAP_GBP = "5.00"
+
+[[mounts]]
+  source = "araim_data"
+  destination = "/app/data"
+  initial_size = "2gb"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/api/health"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512

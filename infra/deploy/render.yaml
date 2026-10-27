@@ -1,0 +1,37 @@
+# Render Blueprint for Ann Reveals AI Manager (v4.0)
+# Target Cloud Hosting Spend: £5.50 - £7.00/month (Starter Plan under £30/month hard ceiling)
+
+services:
+  - type: web
+    name: ann-reveals-ai-manager
+    runtime: docker
+    dockerfilePath: ./infra/docker/Dockerfile
+    plan: starter
+    region: frankfurt
+    healthCheckPath: /api/health
+    autoDeploy: true
+    disk:
+      name: araim-encrypted-vault
+      mountPath: /app/data
+      sizeGB: 2
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: OWNER_HANDLE
+        value: "@annreveals"
+      - key: TIKTOK_WRITE_ENABLED
+        value: "false"
+      - key: INSTAGRAM_WRITE_ENABLED
+        value: "false"
+      - key: THIRD_PARTY_AUTOCOMMENT
+        value: "false"
+      - key: MONTHLY_BUDGET_CAP_GBP
+        value: "30.00"
+      - key: AI_MONTHLY_SUBCAP_GBP
+        value: "5.00"
+      - key: ARAIM_MASTER_KEY
+        generateValue: true
+      - key: ARAIM_CSRF_SECRET
+        generateValue: true
+      - key: ARAIM_OAUTH_STATE_SECRET
+        generateValue: true

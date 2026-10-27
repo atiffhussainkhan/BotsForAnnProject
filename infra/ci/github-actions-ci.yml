@@ -1,0 +1,51 @@
+name: Ann Reveals AI Manager CI & Security Gate
+
+on:
+  push:
+    branches: ["main", "develop"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  security-and-sre-verification:
+    name: Python 3.11 Unit, Stress, Security & Backup Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Secret Scanning & Feature Flag Safety Check (NFR-05, NFR-09)
+        run: |
+          python3 -c '
+          from pathlib import Path
+          env_example = Path(".env.example").read_text()
+          assert "TIKTOK_WRITE_ENABLED=false" in env_example, "TIKTOK_WRITE_ENABLED must default to false"
+          assert "INSTAGRAM_WRITE_ENABLED=false" in env_example, "INSTAGRAM_WRITE_ENABLED must default to false"
+          assert "THIRD_PARTY_AUTOCOMMENT=false" in env_example, "THIRD_PARTY_AUTOCOMMENT must default to false"
+          print("Feature flag defaults verified safe.")
+          '
+
+      - name: Run Platform SRE, Security, 10k Idempotency & Chaos Test Suite
+        run: |
+          python3 -m unittest discover -s tests/platform -p "test_*.py" -v
+
+      - name: Run All Repository Unit Tests
+        run: |
+          python3 -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Verify Encrypted Backup & Restore CLI Roundtrip (NFR-08)
+        run: |
+          mkdir -p /tmp/araim_ci_source /tmp/araim_ci_backups /tmp/araim_ci_restored
+          echo '{"owner": "@annreveals", "vault_test": true}' > /tmp/araim_ci_source/sample_state.json
+          python3 scripts/backup.py --source-dir /tmp/araim_ci_source --output-file /tmp/araim_ci_backups/ci.araim.bak
+          python3 scripts/restore.py --backup-file /tmp/araim_ci_backups/ci.araim.bak --target-dir /tmp/araim_ci_restored
+          cmp -s /tmp/araim_ci_source/sample_state.json /tmp/araim_ci_restored/sample_state.json
+          echo "Encrypted backup and restore CLI roundtrip verified."

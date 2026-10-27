@@ -1,0 +1,35 @@
+version: "3.9"
+
+services:
+  araim-cloud:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile
+    container_name: ann-reveals-ai-manager
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env.example
+    environment:
+      - PORT=8000
+      - TIKTOK_WRITE_ENABLED=false
+      - INSTAGRAM_WRITE_ENABLED=false
+      - THIRD_PARTY_AUTOCOMMENT=false
+      - MONTHLY_BUDGET_CAP_GBP=30.00
+      - AI_MONTHLY_SUBCAP_GBP=5.00
+    volumes:
+      - araim_data:/app/data
+      - araim_backups:/app/backups
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  araim_data:
+  araim_backups:

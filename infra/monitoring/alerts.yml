@@ -1,0 +1,55 @@
+# Ann Reveals AI Manager (v4.0) — SRE Alerting & Automated Circuit-Breaker Rules
+version: "4.0"
+owner: "@annreveals"
+slo_targets:
+  monthly_availability_pct: 99.5
+  webhook_latency_p50_ms: 80
+  webhook_latency_p95_ms: 250
+  max_duplicate_outbound_replies: 0
+  max_false_self_purchase_claims: 0
+  hard_monthly_budget_gbp: 30.00
+  ai_monthly_subcap_gbp: 5.00
+
+alerts:
+  - id: ALERT-001-DUPLICATE-OUTBOUND
+    severity: critical
+    condition: "safety_invariants.duplicate_outbound_count > 0"
+    summary: "Duplicate outbound comment reply detected"
+    automated_action: "trigger_emergency_stop"
+    notification_channel: "urgent_owner_push_and_email"
+
+  - id: ALERT-002-OAUTH-REVOKED-OR-401
+    severity: high
+    condition: "http_status in [401, 403] or token_revoked == true"
+    summary: "Social platform OAuth token expired or scope revoked"
+    automated_action: "auto_downgrade_platform_to_paused_and_draft"
+    badge_update: "Needs reconnect"
+    notification_channel: "urgent_owner_push_and_email"
+
+  - id: ALERT-003-RATE-LIMIT-BURST-429
+    severity: warning
+    condition: "consecutive_429_count >= 3"
+    summary: "Upstream API rate limit encountered (HTTP 429)"
+    automated_action: "apply_30_60_120s_jittered_backoff_and_pause_writes"
+    notification_channel: "daily_digest"
+
+  - id: ALERT-004-BUDGET-WARNING-80PCT
+    severity: warning
+    condition: "budget.total_spend_gbp >= 24.00 or budget.ai_spend_gbp >= 4.00"
+    summary: "Monthly cloud or AI budget reached 80% threshold"
+    automated_action: "warn_owner_on_dashboard"
+    notification_channel: "daily_digest"
+
+  - id: ALERT-005-BUDGET-HARD-CEILING-REACHED
+    severity: high
+    condition: "budget.total_spend_gbp >= 30.00 or budget.ai_spend_gbp >= 5.00"
+    summary: "Hard monthly budget cap reached (£30 total / £5 AI)"
+    automated_action: "disable_paid_llm_and_switch_to_deterministic_templates_in_draft_mode"
+    notification_channel: "urgent_owner_push_and_email"
+
+  - id: ALERT-006-AVAILABILITY-SLO-BREACH
+    severity: high
+    condition: "current_availability_pct < 99.5"
+    summary: "Service availability dipped below 99.5% target"
+    automated_action: "restart_unhealthy_worker_and_pause_auto_send"
+    notification_channel: "urgent_owner_push_and_email"

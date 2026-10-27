@@ -1,0 +1,16 @@
+# Python virtual environments & bytecode
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Local runtime databases & encrypted backup snapshots
+data/*.db
+data/*.db-journal
+data/backups/
+
+# OS & editor files
+.DS_Store
+.env

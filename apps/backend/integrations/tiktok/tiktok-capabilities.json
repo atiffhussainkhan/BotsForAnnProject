@@ -1,0 +1,169 @@
+{
+  "provider": "tiktok",
+  "version": "4.0.0",
+  "verified_date": "2026-10-27",
+  "account_handle": "@annreveals",
+  "march_20_2026_accounts_api_gate": {
+    "effective_date": "2026-03-20",
+    "application_required": true,
+    "documentation_url": "https://business-api.tiktok.com/portal/docs/accounts-api-overview/v1.3",
+    "current_application_status": "AWAITING_APPROVAL"
+  },
+  "default_flags": {
+    "TIKTOK_WRITE_ENABLED": false,
+    "THIRD_PARTY_AUTOCOMMENT": false,
+    "DEFAULT_OPERATIONAL_MODE": "DRAFT"
+  },
+  "allowed_outbound_hosts": [
+    "business-api.tiktok.com",
+    "open.tiktokapis.com"
+  ],
+  "capabilities": {
+    "get_owned_profile": {
+      "capability_id": "TT-CAP-01",
+      "api_family": "TikTok Accounts API v1.3",
+      "http_method": "GET",
+      "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/get/",
+      "required_scopes": ["user.info.basic", "user.info.profile", "user.info.stats"],
+      "requires_write_flag": false,
+      "march_20_2026_gate": true,
+      "live_status": "AWAITING_APPROVAL",
+      "sandbox_status": "VERIFIED_ACTIVE",
+      "fallback_mode": "MANUAL_PROFILE_CONFIG"
+    },
+    "get_owned_posts": {
+      "capability_id": "TT-CAP-02",
+      "api_family": "TikTok Accounts API v1.3",
+      "http_method": "GET",
+      "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/video/list/",
+      "required_scopes": ["video.list"],
+      "requires_write_flag": false,
+      "march_20_2026_gate": true,
+      "live_status": "AWAITING_APPROVAL",
+      "sandbox_status": "VERIFIED_ACTIVE",
+      "fallback_mode": "MANUAL_URL_IMPORT"
+    },
+    "list_owned_comments": {
+      "capability_id": "TT-CAP-03",
+      "api_family": "TikTok Accounts API v1.3",
+      "http_method": "GET",
+      "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/comment/list/",
+      "required_scopes": ["comment.list"],
+      "requires_write_flag": false,
+      "march_20_2026_gate": true,
+      "live_status": "AWAITING_APPROVAL",
+      "sandbox_status": "VERIFIED_ACTIVE",
+      "fallback_mode": "WEBHOOK_OR_MANUAL_QUEUE"
+    },
+    "reply_to_owned_comment": {
+      "capability_id": "TT-CAP-04",
+      "api_family": "TikTok Accounts API v1.3",
+      "http_method": "POST",
+      "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/comment/reply/",
+      "required_scopes": ["comment.list.manage"],
+      "requires_write_flag": true,
+      "march_20_2026_gate": true,
+      "live_status": "AWAITING_APPROVAL",
+      "sandbox_status": "VERIFIED_ACTIVE",
+      "fallback_mode": "DRAFT_ONLY_ONE_TAP_COPY"
+    },
+    "create_comment_on_owned_post": {
+      "capability_id": "TT-CAP-05",
+      "api_family": "TikTok Accounts API v1.3",
+      "http_method": "POST",
+      "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/comment/create/",
+      "required_scopes": ["comment.list.manage"],
+      "requires_write_flag": true,
+      "march_20_2026_gate": true,
+      "live_status": "AWAITING_APPROVAL",
+      "sandbox_status": "VERIFIED_ACTIVE",
+      "fallback_mode": "DRAFT_ONLY_ONE_TAP_COPY"
+    },
+    "subscribe_to_webhooks": {
+      "capability_id": "TT-CAP-06",
+      "api_family": "TikTok Business Webhook Gateway v1.3",
+      "http_method": "POST",
+      "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/webhook/update/",
+      "required_scopes": ["comment.list"],
+      "requires_write_flag": false,
+      "march_20_2026_gate": true,
+      "live_status": "AWAITING_APPROVAL",
+      "sandbox_status": "VERIFIED_ACTIVE",
+      "fallback_mode": "POLLING_RECONCILIATION"
+    },
+    "refresh_auth": {
+      "capability_id": "TT-CAP-07",
+      "api_family": "TikTok OAuth 2.0 v2",
+      "http_method": "POST",
+      "endpoint": "https://open.tiktokapis.com/v2/oauth/token/",
+      "required_scopes": [],
+      "requires_write_flag": false,
+      "march_20_2026_gate": false,
+      "live_status": "AWAITING_APPROVAL",
+      "sandbox_status": "VERIFIED_ACTIVE",
+      "fallback_mode": "RECONNECT_WIZARD_PROMPT"
+    },
+    "publish_post": {
+      "capability_id": "TT-CAP-08",
+      "api_family": "TikTok Content Posting API v2",
+      "http_method": "POST",
+      "endpoint": "https://open.tiktokapis.com/v2/post/publish/video/init/",
+      "required_scopes": ["video.publish", "video.upload"],
+      "requires_write_flag": true,
+      "march_20_2026_gate": false,
+      "live_status": "AWAITING_APPROVAL",
+      "sandbox_status": "VERIFIED_ACTIVE",
+      "fallback_mode": "ONE_TAP_COPY_AND_OPEN_APP"
+    },
+    "get_post_publication_status": {
+      "capability_id": "TT-CAP-09",
+      "api_family": "TikTok Content Posting API v2",
+      "http_method": "POST",
+      "endpoint": "https://open.tiktokapis.com/v2/post/publish/status/fetch/",
+      "required_scopes": ["video.publish", "video.upload"],
+      "requires_write_flag": false,
+      "march_20_2026_gate": false,
+      "live_status": "AWAITING_APPROVAL",
+      "sandbox_status": "VERIFIED_ACTIVE",
+      "fallback_mode": "MANUAL_STATUS_CHECK"
+    },
+    "get_inbox_messages": {
+      "capability_id": "TT-CAP-10",
+      "api_family": "TikTok Business Messaging API",
+      "http_method": "GET",
+      "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/message/list/",
+      "required_scopes": ["business.message.read"],
+      "requires_write_flag": false,
+      "march_20_2026_gate": true,
+      "live_status": "UNAVAILABLE",
+      "sandbox_status": "UNAVAILABLE",
+      "fallback_mode": "NATIVE_TIKTOK_INBOX"
+    },
+    "get_following_posts": {
+      "capability_id": "TT-CAP-11",
+      "api_family": "NONE",
+      "http_method": "NONE",
+      "endpoint": "",
+      "required_scopes": [],
+      "requires_write_flag": false,
+      "march_20_2026_gate": false,
+      "live_status": "UNAVAILABLE",
+      "sandbox_status": "UNAVAILABLE",
+      "fallback_mode": "CURATED_CREATOR_SHORTLIST_URL",
+      "prohibition_reason": "TikTok provides no official API to list following feeds; scraping is strictly prohibited."
+    },
+    "comment_on_nonowned_post": {
+      "capability_id": "TT-CAP-12",
+      "api_family": "NONE",
+      "http_method": "NONE",
+      "endpoint": "",
+      "required_scopes": [],
+      "requires_write_flag": true,
+      "march_20_2026_gate": false,
+      "live_status": "UNAVAILABLE",
+      "sandbox_status": "UNAVAILABLE",
+      "fallback_mode": "ONE_TAP_COPY_AND_OPEN_APP",
+      "prohibition_reason": "Automated commenting on third-party/friends videos is permanently prohibited by TikTok policy and ARAIM safety rules."
+    }
+  }
+}
