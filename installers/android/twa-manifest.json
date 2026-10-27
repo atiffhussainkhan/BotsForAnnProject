@@ -1,0 +1,34 @@
+{
+  "packageId": "uk.co.annreveals.aimanager",
+  "host": "annreveals.app",
+  "name": "Ann Reveals AI Manager",
+  "launcherName": "Ann Reveals",
+  "display": "standalone",
+  "themeColor": "#9E5A5E",
+  "navigationColor": "#FAF6F3",
+  "backgroundColor": "#FAF6F3",
+  "enableNotifications": true,
+  "startUrl": "/?source=android_twa",
+  "iconUrl": "https://annreveals.app/icons/icon-512.png",
+  "maskableIconUrl": "https://annreveals.app/icons/icon-512-maskable.png",
+  "appVersionName": "4.0.0",
+  "appVersionCode": 400,
+  "shortcuts": [
+    {
+      "name": "Sign In & Auto-Pilot",
+      "shortName": "Auto-Pilot",
+      "url": "/#screen-home"
+    },
+    {
+      "name": "Content Studio",
+      "shortName": "Studio",
+      "url": "/#screen-studio"
+    },
+    {
+      "name": "Emergency Stop",
+      "shortName": "STOP",
+      "url": "/#emergency-stop"
+    }
+  ],
+  "generatorApp": "bubblewrap-cli"
+}

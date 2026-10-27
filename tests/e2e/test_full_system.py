@@ -299,6 +299,57 @@ class TestFullSystemE2E(unittest.TestCase):
         g_data = json.loads(g_raw)
         self.assertEqual(g_data["owner"], "@annreveals")
 
+    def test_09_in_app_account_configuration_and_autopilot_worker(self) -> None:
+        # 1. Verify Windows & Android installable bundles exist
+        self.assertTrue((ROOT_DIR / "installers" / "windows" / "Start-AnnReveals-Windows.bat").exists())
+        self.assertTrue((ROOT_DIR / "installers" / "windows" / "Install-AnnReveals-Windows.ps1").exists())
+        self.assertTrue((ROOT_DIR / "installers" / "android" / "twa-manifest.json").exists())
+        self.assertTrue((ROOT_DIR / "installers" / "android" / "capacitor.config.json").exists())
+        self.assertTrue((ROOT_DIR / "dist" / "AnnRevealsAIManager-Portable.html").exists())
+
+        # 2. Configure & sign in Instagram account in-app with Auto-Pilot enabled
+        ig_status, ig_res = self._post_json(
+            "/api/v1/accounts/configure",
+            {
+                "platform": "instagram",
+                "account_handle": "@annreveals",
+                "app_id": "IG-PRO-ANNREVEALS-UK",
+                "access_token": "ig_oauth_live_annreveals_verified_token_2026",
+                "grant_write_scope": True,
+                "verify_pilot": True,
+                "enable_auto_pilot": True,
+            },
+        )
+        self.assertEqual(ig_status, 200)
+        self.assertTrue(ig_res["account"]["connected"])
+        self.assertTrue(ig_res["account"]["auto_pilot_enabled"])
+        self.assertEqual(ig_res["overview"]["platforms"]["instagram"]["mode"], "SAFE_AUTO")
+
+        # 3. Configure & sign in TikTok account in-app with Auto-Pilot enabled
+        tt_status, tt_res = self._post_json(
+            "/api/v1/accounts/configure",
+            {
+                "platform": "tiktok",
+                "account_handle": "@annreveals",
+                "app_id": "TT-BIZ-ANNREVEALS-1.3",
+                "access_token": "tt_oauth_live_annreveals_verified_token_2026",
+                "grant_write_scope": True,
+                "verify_pilot": True,
+                "enable_auto_pilot": True,
+            },
+        )
+        self.assertEqual(tt_status, 200)
+        self.assertTrue(tt_res["account"]["connected"])
+        self.assertTrue(tt_res["account"]["auto_pilot_enabled"])
+        self.assertEqual(tt_res["overview"]["platforms"]["tiktok"]["mode"], "SAFE_AUTO")
+
+        # 4. Run automatic background worker cycle (/api/v1/autopilot/tick)
+        tick_status, tick_res = self._post_json("/api/v1/autopilot/tick", {})
+        self.assertEqual(tick_status, 200)
+        self.assertEqual(tick_res["cycle"]["processed_count"], 2)
+        self.assertGreaterEqual(tick_res["overview"]["accounts"]["instagram"]["auto_replies_sent"], 1)
+        self.assertGreaterEqual(tick_res["overview"]["accounts"]["tiktok"]["auto_replies_sent"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
