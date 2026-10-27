@@ -1456,10 +1456,12 @@ Item: Empyrean Parfums Oud & Silk Extrait 100ml - £185.00 GBP</textarea>
             </div>
             <div style="font-size:0.83rem; color:var(--text-muted); margin-top:6px;">
               <strong>Friend Video:</strong> ${ac.video_title} — <em>"${ac.video_description}"</em><br/>
-              <strong>Scraped from Friend's Video:</strong> Perfume: <code>${ac.scraped_perfume}</code> | Notes: <code>${(ac.scraped_notes || []).join(', ')}</code>
+              <strong>1. Video Type Detected:</strong> <code>${ac.video_format_type || 'FULL_WEAR_TEST_REVIEW'}</code> |
+              <strong>2. Main Product & Brand:</strong> <code>${ac.main_brand_detected || 'Empyrean Parfums'} — ${ac.scraped_perfume}</code> (Notes: <code>${(ac.scraped_notes || []).join(', ')}</code>)<br/>
+              <strong>3. What They Are Trying to Show:</strong> ${ac.core_showcase_focus || 'Demonstrating real-world scent wear and note pyramid'}
             </div>
             <div style="margin-top:8px; padding:10px; background:var(--bg-blush); border-radius:8px;">
-              <strong>💬 Auto-Posted Comment on Friend's Video:</strong><br/>"${ac.comment_posted}"
+              <strong>💬 Auto-Posted Comment & Product Question on Video:</strong><br/>"${ac.comment_posted}"
             </div>
           </div>
         `).join('');

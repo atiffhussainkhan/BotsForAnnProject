@@ -386,6 +386,10 @@ class TestFullSystemE2E(unittest.TestCase):
         self.assertEqual(ac["status"], "AUTO_COMMENTED_ON_FRIEND_VIDEO")
         self.assertIn("iris", ac["scraped_notes"])
         self.assertIn("Chloe", ac["comment_posted"])
+        self.assertEqual(ac["video_format_type"], "LAYERING_ROUTINE")
+        self.assertEqual(ac["main_brand_detected"], "Empyrean Parfums")
+        self.assertTrue(len(ac["core_showcase_focus"]) > 10)
+        self.assertGreaterEqual(len(eng_res["overview"]["friend_groups"]["daily_scraped_videos"]), 1)
 
         # 3. Run full Friend Group Auto-Comment Cycle across all groups
         cyc_status, cyc_res = self._post_json(

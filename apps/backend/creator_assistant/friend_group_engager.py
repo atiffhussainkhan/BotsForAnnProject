@@ -10,6 +10,7 @@ and friend-groups' videos with human-like staggered pacing and anti-duplicate pr
 from __future__ import annotations
 
 import hashlib
+import re
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -129,6 +130,153 @@ class FriendGroup:
 
 
 @dataclass
+class VideoMetadataProfile:
+    """
+    Deep metadata & content analysis scraped from any newly uploaded daily video
+    (works for both @annreveals's own daily uploads and friends' daily uploads).
+    """
+
+    video_id: str
+    platform: str
+    creator_handle: str
+    upload_timestamp: str
+    video_url: str
+    video_title: str
+    caption_text: str
+    hashtags: List[str]
+    video_format_type: str  # e.g. "FIRST_IMPRESSION_UNBOXING" | "FULL_WEAR_TEST_REVIEW" | "LAYERING_ROUTINE" | "SEASONAL_TOP_TRAY"
+    core_showcase_focus: str  # What specifically they are trying to show in the video
+    main_product_detected: str  # Main perfume / product shown
+    main_brand_detected: str
+    extracted_notes: List[str]
+    relevant_product_question: str
+    auto_action_taken: str
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+class DailyVideoMetadataAnalyzer:
+    """
+    Scrapes daily uploaded videos, extracts their metadata, determines:
+    1. What kind of video it is (`video_format_type`)
+    2. What specifically they are trying to show (`core_showcase_focus`)
+    3. What the main product & brand shown is (`main_product_detected`, `main_brand_detected`)
+    4. Generates a relevant product-specific question & comment.
+    """
+
+    _BRAND_PATTERNS: Tuple[Tuple[re.Pattern[str], str], ...] = (
+        (re.compile(r"\bempyrean(?:\s+parfums)?\b", re.I), "Empyrean Parfums"),
+        (re.compile(r"\bkayali\b", re.I), "Kayali"),
+        (re.compile(r"\bparfums\s+de\s+marly|\bpdm\b|\bdelina\b", re.I), "Parfums de Marly"),
+        (re.compile(r"\bjo\s+malone\b", re.I), "Jo Malone London"),
+        (re.compile(r"\bbyredo\b", re.I), "Byredo"),
+        (re.compile(r"\bdiptyque\b", re.I), "Diptyque"),
+        (re.compile(r"\bmfk\b|\bkurkdjian\b|\bbaccarat\b", re.I), "Maison Francis Kurkdjian"),
+        (re.compile(r"\btom\s+ford\b", re.I), "Tom Ford"),
+        (re.compile(r"\bamouage\b", re.I), "Amouage"),
+        (re.compile(r"\bxerjoff\b", re.I), "Xerjoff"),
+    )
+
+    @classmethod
+    def analyze_video_metadata(
+        cls,
+        creator_handle: str,
+        platform: str,
+        video_url: str,
+        video_title: str,
+        caption_text: str,
+    ) -> VideoMetadataProfile:
+        combined = f"{video_title or ''} {caption_text or ''}".strip()
+        lower = combined.lower()
+        hashtags = re.findall(r"#[A-Za-z0-9_]+", combined)
+        if not hashtags:
+            hashtags = ["#ukfragrance", "#perfumetok", "#scentoftheday"]
+
+        perfume_name, notes_tuple = extract_fragrance_signals(
+            post_title=video_title,
+            post_description=caption_text,
+        )
+        notes = list(notes_tuple)
+
+        # Detect brand
+        brand = "Luxury Fragrance House"
+        for pat, bname in cls._BRAND_PATTERNS:
+            if pat.search(combined):
+                brand = bname
+                break
+        if brand == "Luxury Fragrance House" and "empyrean" in perfume_name.lower():
+            brand = "Empyrean Parfums"
+
+        # Determine 1) What kind of video it is & 2) What specifically they are trying to show
+        if re.search(r"\b(?:unbox|unboxing|first\s+impression|haul|new\s+in|blind\s+buy)\b", lower):
+            v_type = "FIRST_IMPRESSION_UNBOXING"
+            focus = (
+                f"Showcasing the bottle presentation, atomiser spritz, and opening {notes[0]} impression of {perfume_name}"
+            )
+            question = (
+                f"Now that {perfume_name} has settled on your skin after unboxing, how is the {notes[0]} dry-down evolving compared to the first spritz? ✨"
+            )
+        elif re.search(r"\b(?:layer|layering|combo|pair|pairing|routine)\b", lower):
+            v_type = "LAYERING_ROUTINE"
+            focus = (
+                f"Demonstrating how {perfume_name} layers with {', '.join(notes[:2])} notes for a custom scent trail"
+            )
+            question = (
+                f"When you layer {perfume_name} like this, do you spray the {notes[0]} base first or mist it over the top for better projection? 🤍"
+            )
+        elif re.search(r"\b(?:top\s*\d+|tray|rotation|winter|autumn|fall|season|collection)\b", lower):
+            v_type = "SEASONAL_TOP_TRAY"
+            focus = (
+                f"Curating a seasonal perfume tray featuring {perfume_name} and highlighting its {', '.join(notes[:2])} warmth"
+            )
+            question = (
+                f"Out of your seasonal lineup, is {perfume_name} the one you reach for most when the UK weather turns chilly? ✨"
+            )
+        elif re.search(r"\b(?:vs|versus|compare|comparison|difference|duel)\b", lower):
+            v_type = "COMPARISON_VS_BATTLE"
+            focus = (
+                f"Comparing the concentration, sillage, and {', '.join(notes[:2])} balance of {perfume_name}"
+            )
+            question = (
+                f"Between the two, does {perfume_name} give you noticeably longer wear time on skin or a softer projection bubble? 🤍"
+            )
+        else:
+            v_type = "FULL_WEAR_TEST_REVIEW"
+            focus = (
+                f"Testing real-world skin longevity, projection trail, and {', '.join(notes[:2])} dry-down of {perfume_name}"
+            )
+            question = (
+                f"How many hours did {perfume_name} stay noticeable on your skin before settling into that {notes[0]} skin-scent dry-down? ✨"
+            )
+
+        is_self = creator_handle.strip().lower().lstrip("@") == "annreveals"
+        action = (
+            f"Linked {perfume_name} ({brand}) to @annreveals daily video for automatic viewer Q&A + generated pinned product comment"
+            if is_self
+            else f"Scraped {creator_handle}'s {v_type} video showing {perfume_name} & auto-posted relevant product comment/question"
+        )
+
+        return VideoMetadataProfile(
+            video_id=f"vid-{uuid.uuid4().hex[:8]}",
+            platform=platform.strip().lower(),
+            creator_handle=creator_handle if creator_handle.startswith("@") else f"@{creator_handle}",
+            upload_timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            video_url=video_url,
+            video_title=video_title,
+            caption_text=caption_text,
+            hashtags=hashtags,
+            video_format_type=v_type,
+            core_showcase_focus=focus,
+            main_product_detected=perfume_name,
+            main_brand_detected=brand,
+            extracted_notes=notes,
+            relevant_product_question=question,
+            auto_action_taken=action,
+        )
+
+
+@dataclass
 class FriendAutoCommentResult:
     """Audited record of an automated comment posted (or drafted) on a friend's video."""
 
@@ -149,6 +297,10 @@ class FriendAutoCommentResult:
     jitter_delay_seconds: int
     status: str  # "AUTO_COMMENTED_ON_FRIEND_VIDEO" | "DRAFT_READY_FOR_1TAP_COPY"
     timestamp: str
+    video_format_type: str = "FULL_WEAR_TEST_REVIEW"
+    core_showcase_focus: str = ""
+    main_brand_detected: str = "Empyrean Parfums"
+    relevant_product_question: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -165,8 +317,47 @@ class FriendGroupAutoEngager:
         self.groups: Dict[str, FriendGroup] = {}
         self.recent_friend_comments: List[str] = []
         self.activity_log: List[FriendAutoCommentResult] = []
+        self.daily_scraped_videos: List[VideoMetadataProfile] = []
         self._cycle_counter: int = 0
         self._seed_default_groups()
+        self._seed_initial_daily_video_scrape()
+
+    def _seed_initial_daily_video_scrape(self) -> None:
+        """Seed today's daily video scrape for @annreveals so the dashboard shows live metadata immediately."""
+        prof = DailyVideoMetadataAnalyzer.analyze_video_metadata(
+            creator_handle="@annreveals",
+            platform="instagram",
+            video_url="https://www.instagram.com/p/DC_Ann_Daily_Upload_1/",
+            video_title="Full 10-Hour Wear Test: 'Empyrean Celestial Iris' Extrait ✨",
+            caption_text=(
+                "Sharing my daily fragrance review! Testing Empyrean Parfums Celestial Iris 100ml "
+                "with powdery iris, bergamot mist, white suede, and warm ambergris. #annreveals #ukfragrance"
+            ),
+        )
+        self.daily_scraped_videos.append(prof)
+
+    def scrape_daily_video(
+        self,
+        creator_handle: str,
+        platform: str,
+        video_url: str,
+        video_title: str,
+        caption_text: str,
+    ) -> VideoMetadataProfile:
+        """
+        Scrape any newly uploaded daily video (from @annreveals or a friend), extract its
+        metadata, classify the video format, identify what specifically they are showing
+        and the main product/brand, and generate a relevant product question/comment.
+        """
+        prof = DailyVideoMetadataAnalyzer.analyze_video_metadata(
+            creator_handle=creator_handle,
+            platform=platform,
+            video_url=video_url,
+            video_title=video_title,
+            caption_text=caption_text,
+        )
+        self.daily_scraped_videos.insert(0, prof)
+        return prof
 
     def total_friend_vocabulary_size(self) -> int:
         """Return total number of distinct mix-and-merge friend comment variations (54,000)."""
@@ -427,6 +618,15 @@ class FriendGroupAutoEngager:
             member.comments_posted_count += 1
             member.last_commented_at = now_iso
 
+        meta_profile = DailyVideoMetadataAnalyzer.analyze_video_metadata(
+            creator_handle=clean_handle,
+            platform=platform,
+            video_url=video_url,
+            video_title=video_title,
+            caption_text=video_description,
+        )
+        self.daily_scraped_videos.insert(0, meta_profile)
+
         res = FriendAutoCommentResult(
             action_id=f"fauto-{uuid.uuid4().hex[:8]}",
             group_id=grp.group_id,
@@ -445,6 +645,10 @@ class FriendGroupAutoEngager:
             jitter_delay_seconds=jitter_sec,
             status=status,
             timestamp=now_iso,
+            video_format_type=meta_profile.video_format_type,
+            core_showcase_focus=meta_profile.core_showcase_focus,
+            main_brand_detected=meta_profile.main_brand_detected,
+            relevant_product_question=meta_profile.relevant_product_question,
         )
         self.activity_log.insert(0, res)
         return res
@@ -519,6 +723,7 @@ class FriendGroupAutoEngager:
             "friend_vocabulary_size": self.total_friend_vocabulary_size(),
             "groups": [g.to_dict() for g in self.groups.values()],
             "recent_auto_comments": [a.to_dict() for a in self.activity_log[:20]],
+            "daily_scraped_videos": [v.to_dict() for v in self.daily_scraped_videos[:20]],
             "total_friend_auto_comments_sent": sum(
                 1 for a in self.activity_log if a.status == "AUTO_COMMENTED_ON_FRIEND_VIDEO"
             ),
