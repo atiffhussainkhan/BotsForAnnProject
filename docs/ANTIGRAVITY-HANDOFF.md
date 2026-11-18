@@ -79,7 +79,7 @@ The launcher uses `uv` when available, or Python 3.11–3.14 and a local virtual
 The direct checks in an environment with `requirements.txt` installed are:
 
 ```bash
-python -m unittest discover -s tests -p 'test_*.py' -v
+python -m unittest discover -s tests -t . -p 'test_*.py' -v
 node --test tests/web/*.test.cjs
 ```
 

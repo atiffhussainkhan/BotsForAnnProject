@@ -35,7 +35,7 @@ def main() -> int:
     except (OSError, subprocess.CalledProcessError):
         revision = "source-package"
     checks = [
-        ("python-tests", [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"]),
+        ("python-tests", [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-t", ".", "-p", "test_*.py", "-v"]),
     ]
     node = shutil.which("node")
     if node:

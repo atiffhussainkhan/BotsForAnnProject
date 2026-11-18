@@ -47,7 +47,7 @@ jobs:
         run: node --test tests/web/*.test.cjs
 
       - name: Run application, integration and backup tests
-        run: python3 -m unittest discover -s tests -p "test_*.py" -v
+        run: python3 -m unittest discover -s tests -t . -p "test_*.py" -v
 
       - name: Start the packaged app
         run: |
@@ -56,6 +56,7 @@ jobs:
           print("ARAIM_OWNER_PASSWORD=" + secrets.token_urlsafe(32))
           PY
       - name: Start the CI container
+        id: container
         run: docker compose up --build --detach --wait --wait-timeout 90
 
       - name: Check the dashboard and installable app assets over HTTP
@@ -89,9 +90,9 @@ jobs:
           PY
 
       - name: Show container logs on failure
-        if: failure()
+        if: failure() && steps.container.outcome != 'skipped'
         run: docker compose logs --no-color
 
       - name: Stop the CI container
-        if: always()
+        if: always() && steps.container.outcome != 'skipped'
         run: docker compose down

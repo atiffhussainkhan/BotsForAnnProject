@@ -39,7 +39,7 @@ Open `Verify-Ann-Reveals.command` on macOS or `Verify-Ann-Reveals.bat` on Window
 Use a Python environment with `requirements.txt` installed.
 
 ```bash
-python -m unittest discover -s tests -p 'test_*.py' -v
+python -m unittest discover -s tests -t . -p 'test_*.py' -v
 node --test tests/web/*.test.cjs
 ```
 
