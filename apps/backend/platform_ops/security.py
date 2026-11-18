@@ -1,10 +1,10 @@
 """
 Agent Echo (Agent 5) — Security, Cryptography, OAuth PKCE, CSRF & RBAC Module.
 
-Provides pure Python 3.9+ standard-library implementations of:
-1. Authenticated Envelope Encryption at rest (`ARAIM-ENC-V1`) for OAuth tokens and receipt evidence
-   using PBKDF2-HMAC-SHA256 key derivation, SHA-256 counter-mode stream encryption, and
-   constant-time HMAC-SHA256 authentication tag verification (zero plaintext secrets on disk or logs).
+Provides:
+1. AES-256-GCM authenticated encryption at rest (`ARAIM-ENC-V2`) through
+   the Python Cryptographic Authority's cryptography package, with authenticated
+   legacy V1 decryption for existing OAuth grants, receipts, and backups.
 2. OAuth 2.0 PKCE (`S256`) `code_verifier` / `code_challenge` and signed `state` token generator/validator.
 3. Constant-time Webhook HMAC-SHA256 signature verification (Meta & TikTok webhooks).
 4. Signed expiring CSRF token generation and validation.
@@ -24,6 +24,9 @@ import struct
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple
+
+from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
 class SecurityError(Exception):
@@ -75,20 +78,18 @@ def _xor_bytes(a: bytes, b: bytes) -> bytes:
 
 class EnvelopeEncryptor:
     """
-    Authenticated Envelope Encryption (`ARAIM-ENC-V1`) for OAuth tokens and receipt evidence.
+    AES-256-GCM envelope encryption for private tokens and receipt evidence.
 
-    Envelope structure (JSON base64url encoded or dict):
-      - v: "ARAIM-ENC-V1"
-      - kid: Key ID (supports seamless secret rotation)
-      - salt: 16-byte random salt (base64url)
-      - nonce: 16-byte random nonce (base64url)
-      - aad: Authenticated Associated Data binding context (e.g. platform/account/purpose)
-      - ct: Ciphertext (base64url)
-      - tag: 32-byte HMAC-SHA256 authentication tag over (v || kid || salt || nonce || aad || ct)
+    New writes use V2 with a fresh 16-byte KDF salt, a fresh 12-byte nonce,
+    and a full 16-byte GCM tag. The version, key ID, salt, nonce, and caller's
+    associated data are authenticated. Existing authenticated V1 records
+    remain readable and can be migrated using reencrypt_token().
     """
 
-    VERSION = "ARAIM-ENC-V1"
+    VERSION = "ARAIM-ENC-V2"
+    LEGACY_VERSION = "ARAIM-ENC-V1"
     PBKDF2_ITERATIONS = 60_000
+    AES_PBKDF2_ITERATIONS = 600_000
 
     def __init__(
         self,
@@ -153,77 +154,93 @@ class EnvelopeEncryptor:
             + ciphertext
         )
 
-    def encrypt_bytes(self, plaintext: bytes, associated_data: str = "") -> str:
-        """Encrypt raw bytes into a compact, tamper-evident `ARAIM-ENC-V1` token string."""
-        salt = secrets.token_bytes(16)
-        nonce = secrets.token_bytes(16)
-        key_id = self._active_key_id
-        enc_key, mac_key = self._derive_subkeys(key_id, salt)
-
-        keystream = _counter_keystream(enc_key, nonce, len(plaintext))
-        ciphertext = _xor_bytes(plaintext, keystream)
-        aad_bytes = associated_data.encode("utf-8")
-
-        auth_payload = self._canonical_auth_payload(
-            self.VERSION, key_id, salt, nonce, aad_bytes, ciphertext
+    def _derive_aes_key(self, key_id: str, salt: bytes) -> bytes:
+        if key_id not in self._key_ring:
+            raise TamperDetectedError("Unknown encryption key ID.")
+        return hashlib.pbkdf2_hmac(
+            "sha256", self._key_ring[key_id], salt, self.AES_PBKDF2_ITERATIONS, dklen=32
         )
-        tag = hmac.new(mac_key, auth_payload, hashlib.sha256).digest()
 
+    def encrypt_bytes(self, plaintext: bytes, associated_data: str = "") -> str:
+        """Encrypt bytes using AES-256-GCM and a fresh per-record nonce."""
+        salt = secrets.token_bytes(16)
+        nonce = secrets.token_bytes(12)
+        key_id = self._active_key_id
+        key = self._derive_aes_key(key_id, salt)
+        context = self._canonical_auth_payload(
+            self.VERSION, key_id, salt, nonce, associated_data.encode("utf-8"), b""
+        )
+        sealed = AESGCM(key).encrypt(nonce, plaintext, context)
         envelope = {
             "v": self.VERSION,
             "kid": key_id,
             "salt": _b64url_encode(salt),
             "nonce": _b64url_encode(nonce),
             "aad": associated_data,
-            "ct": _b64url_encode(ciphertext),
-            "tag": _b64url_encode(tag),
+            "ct": _b64url_encode(sealed[:-16]),
+            "tag": _b64url_encode(sealed[-16:]),
         }
         serialized = json.dumps(envelope, separators=(",", ":"), sort_keys=True).encode("utf-8")
         return f"{self.VERSION}.{_b64url_encode(serialized)}"
 
     def decrypt_bytes(self, token: str, expected_associated_data: Optional[str] = None) -> bytes:
-        """
-        Verify constant-time HMAC-SHA256 authentication tag and decrypt bytes.
-        Raises `TamperDetectedError` on any modification to token, ciphertext, or AAD.
-        """
+        """Authenticate the complete envelope before returning any plaintext."""
         if not token or not isinstance(token, str) or "." not in token:
             raise TamperDetectedError("Malformed encrypted token header.")
         prefix, encoded_body = token.split(".", 1)
-        if prefix != self.VERSION:
-            raise TamperDetectedError(f"Unsupported encryption version: {prefix}")
-
+        if prefix not in (self.VERSION, self.LEGACY_VERSION):
+            raise TamperDetectedError("Unsupported encryption version.")
         try:
-            raw_json = _b64url_decode(encoded_body)
-            envelope = json.loads(raw_json.decode("utf-8"))
-            version = str(envelope["v"])
-            key_id = str(envelope["kid"])
+            envelope = json.loads(_b64url_decode(encoded_body).decode("utf-8"))
+            version = envelope["v"]
+            key_id = envelope["kid"]
             salt = _b64url_decode(envelope["salt"])
             nonce = _b64url_decode(envelope["nonce"])
-            aad_str = str(envelope.get("aad", ""))
+            aad_str = envelope["aad"]
             ciphertext = _b64url_decode(envelope["ct"])
             provided_tag = _b64url_decode(envelope["tag"])
+            if not isinstance(aad_str, str) or not isinstance(key_id, str):
+                raise ValueError("Invalid envelope fields")
         except Exception as exc:
             raise TamperDetectedError("Corrupted encrypted envelope structure.") from exc
-
-        if version != self.VERSION:
+        if version != prefix:
             raise TamperDetectedError("Envelope version mismatch.")
-
         if expected_associated_data is not None and not hmac.compare_digest(
             aad_str.encode("utf-8"), expected_associated_data.encode("utf-8")
         ):
             raise TamperDetectedError("Associated data context mismatch.")
+        if len(salt) != 16:
+            raise TamperDetectedError("Invalid envelope salt.")
+        if version == self.LEGACY_VERSION:
+            return self._decrypt_legacy(
+                key_id, salt, nonce, aad_str.encode("utf-8"), ciphertext, provided_tag
+            )
+        if len(nonce) != 12 or len(provided_tag) != 16:
+            raise TamperDetectedError("Invalid AES-GCM nonce or tag.")
+        key = self._derive_aes_key(key_id, salt)
+        context = self._canonical_auth_payload(
+            version, key_id, salt, nonce, aad_str.encode("utf-8"), b""
+        )
+        try:
+            return AESGCM(key).decrypt(nonce, ciphertext + provided_tag, context)
+        except InvalidTag as exc:
+            raise TamperDetectedError("AES-GCM authentication failed.") from exc
 
+    def _decrypt_legacy(
+        self, key_id: str, salt: bytes, nonce: bytes, aad: bytes,
+        ciphertext: bytes, provided_tag: bytes,
+    ) -> bytes:
+        """Read existing V1 records only after their HMAC has been verified."""
+        if len(nonce) != 16 or len(provided_tag) != 32:
+            raise TamperDetectedError("Invalid legacy nonce or tag.")
         enc_key, mac_key = self._derive_subkeys(key_id, salt)
         auth_payload = self._canonical_auth_payload(
-            version, key_id, salt, nonce, aad_str.encode("utf-8"), ciphertext
+            self.LEGACY_VERSION, key_id, salt, nonce, aad, ciphertext
         )
         expected_tag = hmac.new(mac_key, auth_payload, hashlib.sha256).digest()
-
         if not hmac.compare_digest(expected_tag, provided_tag):
-            raise TamperDetectedError("HMAC authentication tag verification failed: tamper detected.")
-
-        keystream = _counter_keystream(enc_key, nonce, len(ciphertext))
-        return _xor_bytes(ciphertext, keystream)
+            raise TamperDetectedError("Legacy authentication failed.")
+        return _xor_bytes(ciphertext, _counter_keystream(enc_key, nonce, len(ciphertext)))
 
     def encrypt_json(self, payload: Dict[str, Any], associated_data: str = "") -> str:
         """Encrypt a dictionary (e.g. OAuth grant or receipt metadata) at rest."""
@@ -242,9 +259,9 @@ class EnvelopeEncryptor:
 
     def reencrypt_token(self, token: str, expected_associated_data: Optional[str] = None) -> str:
         """Decrypt with historical key and re-encrypt under current active key (`FR-044`)."""
-        aad = expected_associated_data or ""
         plaintext = self.decrypt_bytes(token, expected_associated_data=expected_associated_data)
-        return self.encrypt_bytes(plaintext, associated_data=aad)
+        envelope = json.loads(_b64url_decode(token.split(".", 1)[1]).decode("utf-8"))
+        return self.encrypt_bytes(plaintext, associated_data=envelope["aad"])
 
 
 @dataclass(frozen=True)

@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#9E5A5E" />
-  <title>Ann Reveals AI Manager — Autonomous Engagement & Content Integrity Cloud</title>
-  <link rel="manifest" href="/manifest.json" />
+  <title>Ann Reveals AI Manager — Offline demonstration</title>
+  <meta http-equiv="Content-Security-Policy" content="connect-src 'none'; worker-src 'none'; form-action 'none'">
   <style>
     :root {
       --bg-ivory: #FAF6F3;
@@ -296,18 +296,15 @@
     <div class="brand-title">
       <div class="brand-monogram" aria-hidden="true">AR</div>
       <div>
-        <h1>Ann Reveals AI Manager <span class="badge badge-neutral">v4.0 Cloud PWA</span></h1>
-        <div class="brand-subtitle">@annreveals • Managed Cloud • Dual-Platform Purchase Provenance & UK ASA Guard</div>
+        <h1>Ann Reveals AI Manager <span class="badge badge-neutral">Offline demonstration</span></h1>
+        <div class="brand-subtitle">Sample records for exploring the dashboard. Open your hosted app to manage live accounts.</div>
       </div>
     </div>
     <div class="top-actions">
-      <span id="cloudStatusBadge" class="badge badge-green">Cloud Active • £6.85 / £30.00 mo</span>
-      <button type="button" id="installAppBtn" class="btn-primary" onclick="triggerInstallApp()">
-        📲 Install App (Windows & Android)
-      </button>
+      <span id="cloudStatusBadge" class="badge badge-neutral">Demo data</span>
       <button type="button" class="btn-secondary" onclick="toggleDarkMode()">Theme</button>
       <button type="button" id="emergencyStopBtn" class="btn-danger" onclick="toggleEmergencyStop()">
-        🛑 EMERGENCY STOP (ALL WRITES)
+        Emergency stop preview
       </button>
     </div>
   </header>
@@ -328,7 +325,7 @@
     <main class="content">
       <div id="emergencyBanner" class="banner-stop" role="alert">
         <div>
-          <strong>UNIVERSAL EMERGENCY STOP IS ACTIVE:</strong> All outgoing Instagram and TikTok replies are halted immediately and queued jobs have been safely drained to DRAFT mode.
+          <strong>UNIVERSAL EMERGENCY STOP PREVIEW:</strong> Owners can pause account writes in the hosted app.
         </div>
         <button type="button" class="btn-secondary" onclick="toggleEmergencyStop(false)">Resume to Safe DRAFT Mode</button>
       </div>
@@ -336,114 +333,8 @@
       <!-- SCREEN 1: HOME DASHBOARD -->
       <section id="screen-home" class="screen active">
         <div class="card" style="background: var(--bg-blush);">
-          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-            <div>
-              <h2>Welcome back, Ann ✨ — Single Installable App (Windows Laptop & Android Mobile)</h2>
-              <p>Configure and sign in to your Instagram and TikTok accounts directly below. Once connected, <strong>AnnRevealsApplication</strong> automatically monitors your posts, classifies viewer questions, checks your Verified Purchases Vault, and replies in your authentic UK voice.</p>
-            </div>
-            <div style="display:flex; gap:8px; flex-wrap:wrap;">
-              <button type="button" class="btn-success" onclick="connectBothAccountsAndStartAutoPilot()">
-                🚀 1-Click Sign In Both Accounts & Start Automatic Bot
-              </button>
-              <button type="button" class="btn-secondary" onclick="runAutoPilotCycleNow()">
-                ⚡ Run Auto-Pilot Cycle Now
-              </button>
-            </div>
-          </div>
-          <div id="autopilotLiveTicker" style="margin-top:12px; padding:10px 14px; background:var(--bg-card); border-radius:10px; border:1px solid var(--border-soft); font-size:0.86rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-            <span>🤖 <strong>Auto-Pilot Status:</strong> <span id="autopilotStatusText">Standby — Connect Instagram or TikTok below to start automatic replies</span></span>
-            <span class="badge badge-green" id="autopilotCounterBadge">Auto-Replies Sent: 0</span>
-          </div>
-        </div>
-
-        <div class="grid-2">
-          <!-- Instagram Connection & In-App Login Card -->
-          <div class="card">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-              <h3>Instagram (@annreveals) — In-App Account Setup</h3>
-              <span id="igBadge" class="badge badge-amber">Awaiting review</span>
-            </div>
-            <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:10px;">
-              Official Route: <strong>Instagram API with Instagram Login</strong> (<code>instagram_business_manage_comments</code>). Configure your account below so AnnRevealsApplication logs in and starts working automatically.
-            </p>
-            <div class="grid-2" style="gap:10px; margin-bottom:8px;">
-              <div class="form-group" style="margin-bottom:0;">
-                <label for="igHandleInput">Instagram Handle</label>
-                <input id="igHandleInput" value="@annreveals" />
-              </div>
-              <div class="form-group" style="margin-bottom:0;">
-                <label for="igAppIdInput">Meta App ID / Business ID</label>
-                <input id="igAppIdInput" value="IG-PRO-ANNREVEALS-UK" />
-              </div>
-            </div>
-            <div class="form-group">
-              <label for="igTokenInput">OAuth Access Token / Session Key (Stored Encrypted)</label>
-              <input id="igTokenInput" type="password" value="ig_oauth_live_annreveals_verified_token_2026" />
-            </div>
-            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
-              <button type="button" class="btn-primary" onclick="configureAccountFromUI('instagram', true)">
-                🔐 Sign In & Start Instagram Auto-Bot (SAFE_AUTO)
-              </button>
-              <button type="button" class="btn-secondary" onclick="configureAccountFromUI('instagram', false)">
-                Connect in Safe Draft Mode
-              </button>
-            </div>
-            <div class="form-group">
-              <label for="igModeSelect">Operating Mode (FR-035):</label>
-              <select id="igModeSelect" onchange="setPlatformMode('instagram', this.value)">
-                <option value="OFF">OFF (No processing)</option>
-                <option value="DRAFT" selected>DRAFT ONLY (Safe default — review before posting)</option>
-                <option value="SAFE_AUTO">SAFE_AUTO (Automatic replies active)</option>
-              </select>
-            </div>
-            <div style="font-size:0.82rem; color:var(--text-muted);" id="igReasonText">
-              Write flag: INSTAGRAM_WRITE_ENABLED=false (Click "Sign In & Start Instagram Auto-Bot" above to verify & enable).
-            </div>
-          </div>
-
-          <!-- TikTok Connection & In-App Login Card -->
-          <div class="card">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-              <h3>TikTok (@annreveals) — In-App Account Setup</h3>
-              <span id="ttBadge" class="badge badge-amber">Awaiting review</span>
-            </div>
-            <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:10px;">
-              Official Route: <strong>TikTok Business Accounts API v1.3</strong>. Configure your TikTok account below to log in and activate automatic comment management or 1-tap drafts.
-            </p>
-            <div class="grid-2" style="gap:10px; margin-bottom:8px;">
-              <div class="form-group" style="margin-bottom:0;">
-                <label for="ttHandleInput">TikTok Handle</label>
-                <input id="ttHandleInput" value="@annreveals" />
-              </div>
-              <div class="form-group" style="margin-bottom:0;">
-                <label for="ttAppIdInput">TikTok Client Key / Business ID</label>
-                <input id="ttAppIdInput" value="TT-BIZ-ANNREVEALS-1.3" />
-              </div>
-            </div>
-            <div class="form-group">
-              <label for="ttTokenInput">OAuth Access Token / Session Key (Stored Encrypted)</label>
-              <input id="ttTokenInput" type="password" value="tt_oauth_live_annreveals_verified_token_2026" />
-            </div>
-            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
-              <button type="button" class="btn-primary" onclick="configureAccountFromUI('tiktok', true)">
-                🔐 Sign In & Start TikTok Auto-Bot (SAFE_AUTO)
-              </button>
-              <button type="button" class="btn-secondary" onclick="configureAccountFromUI('tiktok', false)">
-                Connect in Safe Draft Mode
-              </button>
-            </div>
-            <div class="form-group">
-              <label for="ttModeSelect">Operating Mode (FR-035):</label>
-              <select id="ttModeSelect" onchange="setPlatformMode('tiktok', this.value)">
-                <option value="OFF">OFF (No processing)</option>
-                <option value="DRAFT" selected>DRAFT ONLY (Awaiting TikTok March 2026 scope grant)</option>
-                <option value="SAFE_AUTO">SAFE_AUTO (Automatic replies active)</option>
-              </select>
-            </div>
-            <div style="font-size:0.82rem; color:var(--text-muted);" id="ttReasonText">
-              Write flag: TIKTOK_WRITE_ENABLED=false. Click "Sign In & Start TikTok Auto-Bot" above to authorise & activate.
-            </div>
-          </div>
+          <h2>Explore the sample dashboard</h2>
+          <p>All activity shown here is simulated. Open your private hosted copy to connect TikTok or Instagram.</p>
         </div>
 
         <div class="grid-4">
@@ -881,71 +772,13 @@ Item: Empyrean Parfums Oud & Silk Extrait 100ml - £185.00 GBP</textarea>
   </div>
 
   <!-- INSTALL ON WINDOWS LAPTOP & ANDROID MOBILE MODAL -->
-  <div id="installModal" style="display:none; position:fixed; inset:0; background:rgba(29,22,24,0.65); z-index:900; align-items:center; justify-content:center; padding:18px;">
-    <div class="card" style="max-width:680px; width:100%; margin:0; position:relative;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-        <h2>📲 Install Single App on Windows Laptop & Android Mobile</h2>
-        <button type="button" class="btn-secondary" onclick="closeInstallModal()">✕ Close</button>
-      </div>
-      <p style="font-size:0.9rem; margin-bottom:14px;">
-        <strong>Ann Reveals AI Manager v4.0</strong> is packaged as a unified Cross-Platform Application that installs natively on both your <strong>Windows 10/11 Laptop</strong> and your <strong>Android Mobile Phone</strong>:
-      </p>
-      <div class="grid-2" style="margin-bottom:14px;">
-        <div style="padding:14px; background:var(--bg-blush); border-radius:10px;">
-          <h3>💻 1. Install on Windows Laptop</h3>
-          <p style="font-size:0.84rem; margin-bottom:8px;">
-            • <strong>Option A (1-Click Desktop Installer):</strong> Double-click <code>installers/windows/Start-AnnReveals-Windows.bat</code> or run <code>Install-AnnReveals-Windows.ps1</code> to create your Desktop & Start Menu app icon.<br/>
-            • <strong>Option B (Browser App Install):</strong> Click the <strong>Install App</strong> icon in the Microsoft Edge / Chrome address bar to pin it to your Windows Taskbar.
-          </p>
-        </div>
-        <div style="padding:14px; background:var(--bg-blush); border-radius:10px;">
-          <h3>📱 2. Install on Android Mobile</h3>
-          <p style="font-size:0.84rem; margin-bottom:8px;">
-            • <strong>Option A (Chrome Native WebAPK):</strong> Open this app in Chrome on Android and tap <strong>"Install App" / "Add to Home Screen"</strong> for a full-screen Android app icon.<br/>
-            • <strong>Option B (Portable Offline File):</strong> Copy <code>dist/AnnRevealsAIManager-Portable.html</code> to your phone and open it in Chrome — works 100% standalone!
-          </p>
-        </div>
-      </div>
-      <div style="display:flex; justify-content:flex-end; gap:10px;">
-        <button type="button" class="btn-primary" onclick="closeInstallModal(); connectBothAccountsAndStartAutoPilot();">
-          🚀 Sign In Instagram & TikTok Now
-        </button>
-      </div>
-    </div>
-  </div>
-
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script>
     let APP_STATE = null;
-    let deferredInstallPrompt = null;
-    let autoPilotIntervalId = null;
-
-    window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault();
-      deferredInstallPrompt = e;
-    });
-
-    async function triggerInstallApp() {
-      if (deferredInstallPrompt) {
-        deferredInstallPrompt.prompt();
-        const choice = await deferredInstallPrompt.userChoice;
-        deferredInstallPrompt = null;
-        if (choice && choice.outcome === 'accepted') {
-          showToast('Installing Ann Reveals AI Manager on your device!');
-          return;
-        }
-      }
-      document.getElementById('installModal').style.display = 'flex';
-    }
-
-    function closeInstallModal() {
-      document.getElementById('installModal').style.display = 'none';
-    }
-
     // Embedded fallback state if opened directly from file:// on Android or Windows without Python running
     function getFallbackOverview() {
-      const saved = localStorage.getItem('ARAIM_PORTABLE_STATE_V4');
+      const saved = localStorage.getItem('ARAIM_OFFLINE_DEMO_V1');
       if (saved) {
         try { return JSON.parse(saved); } catch (_) {}
       }
@@ -1017,65 +850,14 @@ Item: Empyrean Parfums Oud & Silk Extrait 100ml - £185.00 GBP</textarea>
           }
         }
       };
-      localStorage.setItem('ARAIM_PORTABLE_STATE_V4', JSON.stringify(initial));
+      localStorage.setItem('ARAIM_OFFLINE_DEMO_V1', JSON.stringify(initial));
       return initial;
     }
 
     async function apiFetch(path, options = {}) {
-      try {
-        const res = await fetch(path, options);
-        if (res.ok || res.status === 400) return await res.json();
-      } catch (_) {
-        // Offline / Portable mode fallback
-      }
       const st = getFallbackOverview();
       const body = options.body ? JSON.parse(options.body) : {};
       if (path === '/api/v1/overview') return st;
-      if (path === '/api/v1/accounts/configure') {
-        const p = (body.platform || 'instagram').toLowerCase();
-        const auto = Boolean(body.enable_auto_pilot);
-        st.accounts[p] = {
-          platform: p,
-          account_handle: body.account_handle || '@annreveals',
-          connected: true,
-          auto_pilot_enabled: auto,
-          auto_replies_sent: (st.accounts[p] && st.accounts[p].auto_replies_sent) || 0
-        };
-        st.platforms[p] = {
-          mode: auto ? 'SAFE_AUTO' : 'DRAFT',
-          badge: auto ? 'Safe Auto Pilot' : 'Awaiting review',
-          last_transition_reason: auto ? 'Connected & Auto-Pilot enabled in app' : 'Connected in Draft mode'
-        };
-        st.audit_events.unshift({ timestamp: new Date().toISOString(), actor: 'OWNER', action: 'ACCOUNT_CONNECTED', target: p + ':' + st.accounts[p].account_handle, result_summary: 'mode=' + st.platforms[p].mode });
-        localStorage.setItem('ARAIM_PORTABLE_STATE_V4', JSON.stringify(st));
-        return { status: 'ok', account: st.accounts[p], overview: st };
-      }
-      if (path === '/api/v1/autopilot/tick') {
-        const processed = [];
-        ['instagram', 'tiktok'].forEach(p => {
-          if (st.accounts[p] && st.accounts[p].connected && st.accounts[p].auto_pilot_enabled && !st.emergency_stop.active) {
-            st.accounts[p].auto_replies_sent += 1;
-            st.kpis.total_comments += 1;
-            const cid = 'auto_' + Math.random().toString(36).slice(2, 8);
-            const item = {
-              comment_id: cid,
-              platform: p,
-              post_id: p === 'instagram' ? 'ig_post_celestial' : 'tt_post_99201',
-              commenter_pseudonym: 'AutoViewer#' + cid.slice(-4),
-              category: 'LONGEVITY_PROJECTION',
-              risk_tier: 'SAFE',
-              response_status: 'AUTO_REPLIED_LIVE',
-              text_redacted: 'Does Celestial Iris project well in cool UK weather?',
-              reply_candidate: 'Yes! On my skin it lasted a measured 8–10 hours with a cosy iris and suede aura ✨🤍',
-              audit_trail: ['AutoPilotPolled', 'PromptGuard:CLEAN', 'Vault:VERIFIED_SELF_PURCHASE', 'AutoRepliedLive']
-            };
-            st.comments.unshift(item);
-            processed.push(item);
-          }
-        });
-        localStorage.setItem('ARAIM_PORTABLE_STATE_V4', JSON.stringify(st));
-        return { status: 'ok', cycle: { processed_count: processed.length, items: processed }, overview: st };
-      }
       if (path === '/api/v1/kill-switch/emergency-stop') {
         st.emergency_stop.active = Boolean(body.activate);
         if (st.emergency_stop.active) {
@@ -1087,14 +869,14 @@ Item: Empyrean Parfums Oud & Silk Extrait 100ml - £185.00 GBP</textarea>
           st.platforms.instagram.mode = 'DRAFT';
           st.platforms.tiktok.mode = 'DRAFT';
         }
-        localStorage.setItem('ARAIM_PORTABLE_STATE_V4', JSON.stringify(st));
+        localStorage.setItem('ARAIM_OFFLINE_DEMO_V1', JSON.stringify(st));
         return { status: 'ok', overview: st };
       }
       if (path === '/api/v1/kill-switch/platform-mode') {
         const p = body.platform || 'instagram';
         st.platforms[p].mode = body.mode || 'DRAFT';
         st.platforms[p].badge = body.mode === 'SAFE_AUTO' ? 'Safe Auto Pilot' : 'Draft mode';
-        localStorage.setItem('ARAIM_PORTABLE_STATE_V4', JSON.stringify(st));
+        localStorage.setItem('ARAIM_OFFLINE_DEMO_V1', JSON.stringify(st));
         return { status: 'ok', snapshot: st.platforms[p], overview: st };
       }
       return { status: 'ok', overview: st };
@@ -1132,121 +914,12 @@ Item: Empyrean Parfums Oud & Silk Extrait 100ml - £185.00 GBP</textarea>
       renderAll();
     }
 
-    async function configureAccountFromUI(platform, enableAutoPilot) {
-      const isIg = platform === 'instagram';
-      const handle = document.getElementById(isIg ? 'igHandleInput' : 'ttHandleInput').value || '@annreveals';
-      const appId = document.getElementById(isIg ? 'igAppIdInput' : 'ttAppIdInput').value || 'APP-ID';
-      const token = document.getElementById(isIg ? 'igTokenInput' : 'ttTokenInput').value || 'oauth_live_token';
-
-      const data = await apiFetch('/api/v1/accounts/configure', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          platform: platform,
-          account_handle: handle,
-          app_id: appId,
-          access_token: token,
-          grant_write_scope: true,
-          verify_pilot: true,
-          enable_auto_pilot: enableAutoPilot
-        })
-      });
-      if (data.overview) {
-        APP_STATE = data.overview;
-        renderAll();
-      }
-      if (enableAutoPilot) {
-        ensureAutoPilotLoopRunning();
-        showToast('✅ ' + platform.toUpperCase() + ' (' + handle + ') signed in & Automatic Bot started!');
-        await runAutoPilotCycleNow();
-      } else {
-        showToast('✅ ' + platform.toUpperCase() + ' (' + handle + ') connected in Safe Draft mode!');
-      }
-    }
-
-    async function connectBothAccountsAndStartAutoPilot() {
-      await configureAccountFromUI('instagram', true);
-      await configureAccountFromUI('tiktok', true);
-      showToast('🚀 Both Instagram & TikTok (@annreveals) signed in — Auto-Pilot is now running automatically!');
-    }
-
-    async function runAutoPilotCycleNow() {
-      const data = await apiFetch('/api/v1/autopilot/tick', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({})
-      });
-      if (data.overview) {
-        APP_STATE = data.overview;
-        renderAll();
-      }
-      const count = (data.cycle && data.cycle.processed_count) || 0;
-      if (count > 0) {
-        showToast('⚡ Auto-Pilot processed ' + count + ' new comment(s) automatically!');
-      } else {
-        showToast('🤖 Auto-Pilot checked queues (connect an account in SAFE_AUTO to auto-reply).');
-      }
-    }
-
-    function ensureAutoPilotLoopRunning() {
-      if (autoPilotIntervalId) return;
-      autoPilotIntervalId = setInterval(async () => {
-        if (!APP_STATE || APP_STATE.emergency_stop.active) return;
-        const acc = APP_STATE.accounts || {};
-        const anyAuto = (acc.instagram && acc.instagram.auto_pilot_enabled) || (acc.tiktok && acc.tiktok.auto_pilot_enabled);
-        if (anyAuto) {
-          const data = await apiFetch('/api/v1/autopilot/tick', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({})
-          });
-          if (data && data.overview) {
-            APP_STATE = data.overview;
-            renderAll();
-          }
-        }
-      }, 12000);
-    }
-
     function renderAll() {
       if (!APP_STATE) return;
       const es = APP_STATE.emergency_stop.active;
       const banner = document.getElementById('emergencyBanner');
       if (es) banner.classList.add('visible');
       else banner.classList.remove('visible');
-
-      // Platforms
-      const ig = APP_STATE.platforms.instagram;
-      const tt = APP_STATE.platforms.tiktok;
-      document.getElementById('igBadge').textContent = ig.badge;
-      document.getElementById('igBadge').className = 'badge ' + (ig.mode === 'SAFE_AUTO' ? 'badge-green' : 'badge-amber');
-      document.getElementById('igModeSelect').value = ig.mode === 'PAUSED_BY_SYSTEM' ? 'DRAFT' : ig.mode;
-      document.getElementById('igReasonText').textContent = ig.last_transition_reason;
-
-      document.getElementById('ttBadge').textContent = tt.badge;
-      document.getElementById('ttBadge').className = 'badge ' + (tt.mode === 'SAFE_AUTO' ? 'badge-green' : 'badge-amber');
-      document.getElementById('ttModeSelect').value = tt.mode === 'PAUSED_BY_SYSTEM' ? 'DRAFT' : tt.mode;
-      document.getElementById('ttReasonText').textContent = tt.last_transition_reason;
-
-      // Auto-Pilot status bar
-      if (APP_STATE.accounts) {
-        const igAcc = APP_STATE.accounts.instagram || {};
-        const ttAcc = APP_STATE.accounts.tiktok || {};
-        const totalSent = (igAcc.auto_replies_sent || 0) + (ttAcc.auto_replies_sent || 0);
-        const activeList = [];
-        if (igAcc.auto_pilot_enabled) activeList.push('Instagram (' + (igAcc.account_handle || '@annreveals') + ')');
-        if (ttAcc.auto_pilot_enabled) activeList.push('TikTok (' + (ttAcc.account_handle || '@annreveals') + ')');
-        const statusEl = document.getElementById('autopilotStatusText');
-        const counterEl = document.getElementById('autopilotCounterBadge');
-        if (statusEl) {
-          statusEl.textContent = activeList.length
-            ? 'ACTIVE — Automatically replying on ' + activeList.join(' & ')
-            : 'Standby — Click "Sign In & Start Auto-Bot" below to start automatic replies';
-        }
-        if (counterEl) {
-          counterEl.textContent = 'Auto-Replies Sent: ' + totalSent;
-        }
-      }
 
       // KPIs
       document.getElementById('kpiTotalComments').textContent = APP_STATE.kpis.total_comments;
@@ -1255,8 +928,6 @@ Item: Empyrean Parfums Oud & Silk Extrait 100ml - £185.00 GBP</textarea>
       document.getElementById('kpiVault').textContent = APP_STATE.kpis.verified_purchases + ' Verified';
       document.getElementById('kpiMerchantPending').textContent = APP_STATE.kpis.pending_merchant_confirmations + " 'Experian' Needs Confirm";
       document.getElementById('kpiSpend').textContent = '£' + APP_STATE.budget.total_spend_gbp.toFixed(2);
-      document.getElementById('cloudStatusBadge').textContent =
-        'Cloud Active • £' + APP_STATE.budget.total_spend_gbp.toFixed(2) + ' / £30.00 mo';
 
       renderComments();
       renderVault();
@@ -1767,12 +1438,20 @@ Item: Empyrean Parfums Oud & Silk Extrait 100ml - £185.00 GBP</textarea>
       showToast('Saved Ann Reveals brand voice settings!');
     }
 
+    document.addEventListener('click', (event) => {
+      const button = event.target.closest('button');
+      if (!button) return;
+      const action = button.getAttribute('onclick') || '';
+      const demoActions = ['showScreen(', 'copyText(', 'loadSampleCase(', 'fillPresetComment(', 'toggleDarkMode('];
+      if (demoActions.some(prefix => action.startsWith(prefix))) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      showToast('This action is available in the hosted app.');
+    }, true);
+
     window.addEventListener('DOMContentLoaded', async () => {
       await fetchOverview();
       loadSampleCase('A');
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js').catch(() => {});
-      }
     });
   </script>
 </body>

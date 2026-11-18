@@ -215,7 +215,7 @@ class TestPlatformSecurityAndSRE(unittest.TestCase):
 
     def test_oauth_encryption_key_rotation_and_tamper_detection(self) -> None:
         """
-        Verify NFR-05 & FR-044: Authenticated envelope encryption (`ARAIM-ENC-V1`) for OAuth grants,
+        Verify NFR-05 & FR-044: AES-GCM authenticated envelope encryption for OAuth grants,
         associated data binding, key rotation, and byte-level tamper rejection.
         """
         enc = EnvelopeEncryptor(master_key="super-secret-master-key-v1-32bytes!", key_id="k1")
@@ -228,7 +228,7 @@ class TestPlatformSecurityAndSRE(unittest.TestCase):
             refresh_token="IGQVJ_refresh_98765",
             scopes=["instagram_basic", "instagram_manage_comments"],
         )
-        self.assertTrue(sealed.startswith("ARAIM-ENC-V1."))
+        self.assertTrue(sealed.startswith(EnvelopeEncryptor.VERSION + "."))
         self.assertNotIn("IGQVJ_live_secret_access_token_12345", sealed)
 
         # Unseal with matching platform + account

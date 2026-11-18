@@ -8,7 +8,8 @@ services:
     dockerfilePath: ./infra/docker/Dockerfile
     plan: starter
     region: frankfurt
-    healthCheckPath: /api/health
+    dockerContext: .
+    healthCheckPath: /api/v1/health
     autoDeploy: true
     disk:
       name: araim-encrypted-vault
@@ -29,6 +30,10 @@ services:
         value: "30.00"
       - key: AI_MONTHLY_SUBCAP_GBP
         value: "5.00"
+      - key: ARAIM_PUBLIC_ORIGIN
+        sync: false
+      - key: ARAIM_OWNER_PASSWORD
+        sync: false
       - key: ARAIM_MASTER_KEY
         generateValue: true
       - key: ARAIM_CSRF_SECRET

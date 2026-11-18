@@ -11,10 +11,17 @@ Integrates all five specialist agent workstreams into a single cohesive cloud se
 
 from __future__ import annotations
 
+import base64
+import binascii
 import dataclasses
+import hmac
+import logging
 import enum
 import json
 import os
+import shutil
+import sqlite3
+import tempfile
 import sys
 import threading
 import time
@@ -80,6 +87,10 @@ from apps.backend.provenance import (
     VerifiedPurchasesVault,
 )
 from backend.database import DatabaseManager
+from backend.comment_drafts import CommentDrafts
+from apps.backend.provenance.storage import VaultStorage
+from backend.tiktok_worker import TikTokWorker
+from apps.backend.integrations.tiktok.models import SecurityConfigurationError
 
 
 def _to_jsonable(obj: Any) -> Any:
@@ -105,11 +116,19 @@ class AnnRevealsApplication:
     Coordinates all five specialist engineering subsystems and durable SQLite/Postgres state.
     """
 
-    def __init__(self, db_path: Optional[str | Path] = None, backup_dir: Optional[str | Path] = None) -> None:
+    def __init__(
+        self, db_path: Optional[str | Path] = None, backup_dir: Optional[str | Path] = None,
+        *, demo: bool = False, tiktok_adapter: Optional[TikTokAdapter] = None,
+        tiktok_writes: Optional[bool] = None,
+    ) -> None:
         self.db = DatabaseManager(db_path=db_path)
+        self.demo = demo
 
         # Agent Echo: Security, Kill-Switch, Budget Guard, Idempotency, GDPR, Backup, Health
-        self.encryptor = EnvelopeEncryptor()
+        self.encryptor = (
+            EnvelopeEncryptor() if demo or os.environ.get("ARAIM_MASTER_KEY")
+            else VaultStorage(self.db.db_path).encryptor
+        )
         self.oauth_security = OAuthSecurityManager()
         self.kill_switch = KillSwitchController(
             tiktok_write_enabled=False,
@@ -125,7 +144,7 @@ class AnnRevealsApplication:
         )
         self.idempotency = IdempotencyStore()
         self.gdpr = GDPRComplianceManager()
-        self.backup_dir = Path(backup_dir or (ROOT_DIR / "data" / "backups"))
+        self.backup_dir = Path(backup_dir or os.environ.get("ARAIM_BACKUP_DIR") or (ROOT_DIR / "data" / "backups"))
         self.backup_dir.mkdir(parents=True, exist_ok=True)
         self.backup_manager = BackupManager(encryptor=self.encryptor)
         self.backups_history: List[Any] = []
@@ -136,8 +155,16 @@ class AnnRevealsApplication:
         )
 
         # Agent Alpha & Agent Bravo: Official Platform Adapters
-        self.tiktok_adapter = TikTokAdapter()
-        self.tiktok_webhook_verifier = TikTokWebhookVerifier(client_secret="tt_sandbox_secret_v4")
+        self.tiktok_worker = TikTokWorker(self, tiktok_adapter, writes_enabled=tiktok_writes)
+        self.tiktok_adapter = self.tiktok_worker.adapter
+        webhook_secret = os.environ.get("TIKTOK_BUSINESS_WEBHOOK_SECRET")
+        self.tiktok_webhook_verifier = (
+            TikTokWebhookVerifier(
+                client_secret=webhook_secret, owned_business_id=self.tiktok_worker.account,
+                expected_client_key=self.tiktok_worker.app_id,
+            )
+            if webhook_secret and self.tiktok_worker.configured else None
+        )
         self.instagram_adapter = InstagramAdapter()
         self.instagram_webhook_verifier = InstagramWebhookVerifier(
             app_secret="ig_sandbox_secret_v4",
@@ -157,12 +184,14 @@ class AnnRevealsApplication:
         self.watchlist_manager = CreatorWatchlistManager(daily_notification_cap=10)
         self.draft_generator = CreatorDraftGenerator(watchlist_manager=self.watchlist_manager)
         self.friend_group_engager = FriendGroupAutoEngager()
-        self.friend_group_engager.run_group_auto_comment_cycle(emergency_stop=False)
 
         # Agent Delta: Verified Purchases Vault, Disclosure Engine, Content Studio & Appeals
         self.redactor = ReceiptRedactor()
         self.merchant_normalizer = MerchantNormalizer()
-        self.vault = VerifiedPurchasesVault()
+        self.vault = VerifiedPurchasesVault(
+            storage_path=None if demo else self.db.db_path,
+            encryptor=self.encryptor,
+        )
         self.disclosure_engine = DisclosureEngine()
         self.preflight_checker = PreflightChecker(disclosure_engine=self.disclosure_engine)
         self.content_studio = DualPlatformContentStudio(
@@ -170,6 +199,7 @@ class AnnRevealsApplication:
             preflight_checker=self.preflight_checker,
         )
         self.appeals_tracker = AppealsTracker()
+        self.appeals_tracker.frozen_posts.update(self.db.frozen_posts())
         self.appeal_packet_builder = AppealPacketBuilder()
         self.appeal_packets: Dict[str, Any] = {}
 
@@ -217,9 +247,15 @@ class AnnRevealsApplication:
                 "auto_replies_sent": 0,
             },
         }
-        self._autopilot_counter: int = 0
-
-        self._seed_initial_domain_state()
+        self.comment_drafts = CommentDrafts(self)
+        self._creator_notifications: List[Any] = []
+        saved = self.db.get_settings()
+        if saved.get("emergency_stop"):
+            self.kill_switch.trigger_emergency_stop(reason="Restored owner Emergency Stop")
+        elif saved.get("tiktok_mode") == "OFF":
+            self.kill_switch.set_platform_mode("tiktok", PlatformMode.OFF)
+        if demo:
+            self._seed_initial_domain_state()
 
     def _seed_initial_domain_state(self) -> None:
         """Seed initial verified purchases, ambiguous Experian receipt, comments, creator alerts, and appeals."""
@@ -583,17 +619,8 @@ class AnnRevealsApplication:
             response_status = "BLOCKED_SAFETY_GUARD"
         elif reply_out.needs_human or not reply_out.reply_candidate:
             response_status = "NEEDS_HUMAN_REVIEW"
-        elif reply_out.eligible_for_auto and snap.write_flag_enabled and not self.kill_switch.emergency_stop_active:
-            response_status = "AUTO_PUBLISHED_SAFE"
         else:
             response_status = "DRAFT_AWAITING_APPROVAL"
-            if reply_out.reply_candidate:
-                self.kill_switch.enqueue_job(
-                    job_id=f"job-{plat}-{comment_id}",
-                    platform=plat,
-                    comment_id=comment_id,
-                    reply_text=reply_out.reply_candidate,
-                )
 
         redacted_comment = self.redactor.redact(comment_text).redacted_text
         self.db.save_comment(
@@ -636,18 +663,15 @@ class AnnRevealsApplication:
         tt_snap = self.kill_switch.get_platform_snapshot("tiktok")
         budget = self.budget_guard.get_status()
         health = self.health_monitor.get_health_summary()
-        comments = self.db.list_comments()
+        comments = self.tiktok_worker.inbox() + self.comment_drafts.attach_links(self.db.list_comments())
+        for comment in comments:
+            if comment["response_status"] == "AUTO_PUBLISHED_SAFE":
+                comment["response_status"] = "LEGACY_UNVERIFIED"
+        accounts = _to_jsonable(self.account_configs)
+        accounts["tiktok"].update(self.tiktok_worker.overview())
         settings = self.db.get_settings()
 
-        vault_items = []
-        for sku, item in self.vault.items.items():
-            match = self.vault.match_results_by_sku.get(sku)
-            receipt = self.vault.receipts.get(match.receipt_id) if (match and match.receipt_id) else None
-            vault_items.append({
-                "item": _to_jsonable(item),
-                "match": _to_jsonable(match),
-                "receipt": _to_jsonable(receipt),
-            })
+        vault_items = self.vault.dashboard_records()
 
         appeals_list = []
         for case_id, case in self.appeals_tracker.cases.items():
@@ -666,7 +690,7 @@ class AnnRevealsApplication:
 
         return {
             "product_name": "Ann Reveals AI Manager",
-            "version": "4.0.0",
+            "version": "4.1.0",
             "handle": "@annreveals",
             "emergency_stop": {
                 "active": self.kill_switch.emergency_stop_active,
@@ -706,165 +730,33 @@ class AnnRevealsApplication:
             "creator_notifications": _to_jsonable(self._creator_notifications),
             "friend_groups": _to_jsonable(self.friend_group_engager.get_summary()),
             "appeals": appeals_list,
-            "frozen_posts": list(self.appeals_tracker.frozen_posts),
+            "frozen_posts": sorted(set(self.db.frozen_posts()) | self.appeals_tracker.frozen_posts),
             "sample_cases": {
                 "case_a_instagram_independent": _to_jsonable(sample_a),
                 "case_b_tiktok_independent": _to_jsonable(sample_b_indep),
                 "case_b_tiktok_affiliate": _to_jsonable(sample_b_affil),
             },
             "settings": settings,
-            "account_configs": _to_jsonable(self.account_configs),
-            "accounts": _to_jsonable(self.account_configs),
+            "account_configs": accounts,
+            "accounts": accounts,
+            "demo": self.demo,
             "audit_events": self.db.list_audit_events(limit=30),
             "backups": _to_jsonable(self.backups_history),
         }
 
     def configure_and_connect_account(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Configure Instagram or TikTok account from the Windows/Android app UI,
-        perform OAuth / Pilot Scope verification, and optionally enable Auto-Pilot.
-        """
-        platform = str(payload.get("platform", "instagram")).strip().lower()
-        if platform not in ("instagram", "tiktok"):
-            raise ValueError(f"Unsupported platform: {platform}")
-
-        cfg = self.account_configs[platform]
-        cfg["handle"] = str(payload.get("handle") or payload.get("account_handle") or cfg["handle"]).strip()
-        if not cfg["handle"].startswith("@"):
-            cfg["handle"] = "@" + cfg["handle"]
-        cfg["account_handle"] = cfg["handle"]
-
-        if "account_type" in payload:
-            cfg["account_type"] = str(payload["account_type"])
-        if "client_id" in payload or "app_id" in payload:
-            cfg["client_id"] = str(payload.get("client_id") or payload.get("app_id")).strip()
-        if "client_key" in payload or "app_id" in payload:
-            cfg["client_key"] = str(payload.get("client_key") or payload.get("app_id")).strip()
-        if "accounts_api_application_submitted" in payload:
-            cfg["accounts_api_application_submitted"] = bool(payload["accounts_api_application_submitted"])
-        if "allowed_auto_categories" in payload and isinstance(payload["allowed_auto_categories"], list):
-            cfg["allowed_auto_categories"] = [str(x) for x in payload["allowed_auto_categories"]]
-
-        connect_oauth = bool(payload.get("connect_oauth", True))
-        verify_pilot_scope = bool(
-            payload.get("verify_pilot_scope", False)
-            or payload.get("verify_pilot", False)
-            or payload.get("grant_write_scope", False)
-        )
-        enable_autopilot = bool(
-            payload.get("enable_autopilot", False) or payload.get("enable_auto_pilot", False)
-        )
-
-        cfg["connected"] = connect_oauth
-        cfg["last_sync_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-
-        if platform == "instagram":
-            # Instagram Professional account with instagram_business_manage_comments
-            scope_ok = connect_oauth and verify_pilot_scope
-            cfg["pilot_verified"] = scope_ok
-            cfg["auto_pilot_enabled"] = bool(scope_ok and enable_autopilot)
-            self.kill_switch.configure_connection_state(
-                "instagram",
-                oauth_connected=connect_oauth,
-                write_scope_verified=scope_ok,
-                review_pending=not scope_ok,
-                needs_reconnect=False,
-                suspended=False,
-                write_flag_enabled=scope_ok,
-            )
-            target_mode = PlatformMode.SAFE_AUTO if cfg["auto_pilot_enabled"] else PlatformMode.DRAFT
-            self.kill_switch.set_platform_mode("instagram", target_mode, reason="Configured via App Account Setup")
-            self.db.update_settings({"instagram_mode": target_mode.value})
-        else:
-            # TikTok requires March 20, 2026 Accounts API approval for write scope
-            app_approved = bool(
-                payload.get("tiktok_accounts_api_approved", False)
-                or payload.get("grant_write_scope", False)
-                or verify_pilot_scope
-            )
-            cfg["pilot_verified"] = bool(connect_oauth and app_approved)
-            cfg["auto_pilot_enabled"] = bool(cfg["pilot_verified"] and enable_autopilot)
-            self.kill_switch.configure_connection_state(
-                "tiktok",
-                oauth_connected=connect_oauth,
-                write_scope_verified=cfg["pilot_verified"],
-                review_pending=not cfg["pilot_verified"],
-                needs_reconnect=False,
-                suspended=False,
-                write_flag_enabled=cfg["pilot_verified"],
-            )
-            target_mode = PlatformMode.SAFE_AUTO if cfg["auto_pilot_enabled"] else PlatformMode.DRAFT
-            self.kill_switch.set_platform_mode("tiktok", target_mode, reason="Configured via App Account Setup")
-            self.db.update_settings({"tiktok_mode": target_mode.value})
-
-        self.db.log_audit_event(
-            "OWNER_APP",
-            f"ACCOUNT_CONFIGURED:{platform.upper()}",
-            cfg["handle"],
-            f"connected={cfg['connected']} pilot_verified={cfg['pilot_verified']} autopilot={cfg['auto_pilot_enabled']}",
-        )
-        return cfg
+        """Return provider-backed state; form data cannot approve platform access."""
+        platform = str(payload.get("platform", "")).lower()
+        if platform == "tiktok":
+            return {**self.account_configs[platform], **self.tiktok_worker.verify()}
+        if platform != "instagram":
+            raise ValueError("Unknown platform")
+        return {**self.account_configs[platform], "status": "awaiting_provider_setup"}
 
     def run_autopilot_cycle(self, platform: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Execute an autonomous background polling & reply cycle across configured accounts.
-        Ingests any new comments from the platform feed, classifies them, generates Ann Reveals
-        replies, auto-publishes safe categories if `SAFE_AUTO` is active (or saves as 1-tap Drafts),
-        and increments live telemetry.
-        """
-        if self.kill_switch.emergency_stop_active:
-            return {"status": "halted_by_emergency_stop", "processed": []}
-
-        self._autopilot_counter += 1
-        idx = self._autopilot_counter
-        feed_samples = [
-            (
-                "instagram",
-                f"ig_auto_{idx}_{uuid.uuid4().hex[:5]}",
-                "ig_post_celestial",
-                "EMP-VELVET-OUD-100",
-                f"@london_scent_lover_{idx}",
-                "How long does Celestial Iris last on skin and what are the main notes?",
-            ),
-            (
-                "tiktok",
-                f"tt_auto_{idx}_{uuid.uuid4().hex[:5]}",
-                "tt_post_celestial",
-                "EMP-VELVET-OUD-100",
-                f"@perfumetok_uk_{idx}",
-                "Where did you buy Celestial Iris from and how much is the 100ml bottle?",
-            ),
-        ]
-
-        processed = []
-        for plat, cid, pid, sku, author, text in feed_samples:
-            if platform and plat != platform.lower():
-                continue
-            res = self.process_incoming_comment(
-                platform=plat,
-                comment_id=cid,
-                post_id=pid,
-                author_handle=author,
-                comment_text=text,
-                post_sku=sku,
-            )
-            if res.get("response_status") == "AUTO_PUBLISHED_SAFE":
-                self.account_configs[plat]["auto_replies_sent"] += 1
-            self.account_configs[plat]["last_sync_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-            processed.append(res)
-
-        friend_auto_results = self.friend_group_engager.run_group_auto_comment_cycle(
-            emergency_stop=self.kill_switch.emergency_stop_active
-        )
-
-        return {
-            "status": "ok",
-            "cycle": idx,
-            "processed_count": len(processed),
-            "processed": processed,
-            "friend_videos_auto_commented_count": len(friend_auto_results),
-            "friend_videos_auto_commented": _to_jsonable(friend_auto_results),
-        }
+        if platform not in (None, "tiktok"):
+            return {"status": "awaiting_provider_setup", "processed_count": 0}
+        return self.tiktok_worker.sync()
 
     def dispatch_http(
         self,
@@ -884,6 +776,10 @@ class AnnRevealsApplication:
         payload = body or {}
 
         if m == "GET":
+            if clean_path == "/offline.html":
+                return 200, (web_dir / "offline.html").read_bytes(), "text/html; charset=utf-8"
+            if clean_path in {"/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon-512-maskable.png"}:
+                return 200, (web_dir / clean_path.lstrip("/")).read_bytes(), "image/png"
             if clean_path in ("/", "/index.html"):
                 return 200, (web_dir / "index.html").read_text(encoding="utf-8"), "text/html; charset=utf-8"
             if clean_path == "/manifest.json":
@@ -932,7 +828,10 @@ class AnnRevealsApplication:
                 desired_mode_str = str(payload.get("mode", "DRAFT")).upper()
                 try:
                     desired_mode = PlatformMode(desired_mode_str)
-                    snap = self.kill_switch.set_platform_mode(platform, desired_mode)
+                    snap = (
+                        self.tiktok_worker.set_mode(desired_mode)
+                        if platform == "tiktok" else self.kill_switch.set_platform_mode(platform, desired_mode)
+                    )
                     col = "instagram_mode" if platform == "instagram" else "tiktok_mode"
                     self.db.update_settings({col: snap.mode.value})
                     self.db.log_audit_event("OWNER", "SET_PLATFORM_MODE", platform, f"Mode set to {snap.mode.value}")
@@ -948,7 +847,16 @@ class AnnRevealsApplication:
                         "application/json; charset=utf-8",
                     )
 
+            if clean_path == "/api/v1/comments/import":
+                try:
+                    result = self.comment_drafts.import_comment(payload)
+                except ValueError as exc:
+                    return 400, {"error": str(exc)}, "application/json; charset=utf-8"
+                return 200, {"status": "ok", "result": result, "overview": self.get_dashboard_overview()}, "application/json; charset=utf-8"
+
             if clean_path == "/api/v1/comments/simulate":
+                if not self.demo:
+                    return 403, {"error": "Comment simulation is available in demo mode"}, "application/json; charset=utf-8"
                 result = self.process_incoming_comment(
                     platform=str(payload.get("platform", "instagram")),
                     comment_id=str(payload.get("comment_id") or f"sim_{uuid.uuid4().hex[:8]}"),
@@ -971,7 +879,9 @@ class AnnRevealsApplication:
                 receipt = self.vault.receipts.get(match.receipt_id) if (match and match.receipt_id) else None
                 merchant_needs_conf = bool(receipt and receipt.merchant.requires_owner_confirmation)
 
-                prov_str = str(payload.get("provenance_status", "SELF_PURCHASED")).upper()
+                if not self.demo and item is None:
+                    return 400, {"error": "Add this product to your purchase vault first."}, "application/json; charset=utf-8"
+                prov_str = str(payload.get("provenance_status", "UNKNOWN")).upper()
                 prov = ProvenanceStatus(prov_str)
                 ig_rels = [
                     CommercialRelationship(r)
@@ -994,13 +904,13 @@ class AnnRevealsApplication:
                     fragrance_notes_summary=str(
                         payload.get(
                             "fragrance_notes_summary",
-                            "Orris butter, bergamot mist, white suede, and warm ambergris.",
+                            "No fragrance notes recorded.",
                         )
                     ),
                     wear_impression_summary=str(
                         payload.get(
                             "wear_impression_summary",
-                            "Measured 8–10 hours of soft-luxury skin projection with a velvety dry-down.",
+                            "A measured wear test has not been recorded.",
                         )
                     ),
                     provenance_status=prov,
@@ -1022,19 +932,17 @@ class AnnRevealsApplication:
 
             if clean_path == "/api/v1/vault/ingest-receipt":
                 sku = str(payload.get("sku") or f"SKU-{uuid.uuid4().hex[:6].upper()}")
-                brand = str(payload.get("brand", "Empyrean Parfums"))
-                product_name = str(payload.get("product_name", "Velvet Oud"))
-                variant = str(payload.get("variant", "Extrait"))
-                concentration = str(payload.get("concentration", "Extrait de Parfum"))
-                size_ml = int(payload.get("size_ml", 100))
-                merchant_raw = str(payload.get("merchant_label_raw", "Empyrean Parfums"))
-                price = float(payload.get("net_paid", 180.0))
-                raw_text = str(
-                    payload.get(
-                        "raw_text",
-                        f"Receipt from {merchant_raw}\nItem: {brand} {product_name} {size_ml}ml\nPaid: £{price:.2f}",
-                    )
-                )
+                brand = str(payload.get("brand", "")).strip()
+                product_name = str(payload.get("product_name", "")).strip()
+                variant = str(payload.get("variant", "")).strip()
+                concentration = str(payload.get("concentration", "EDP")).strip()
+                size_ml = int(payload.get("size_ml", 0))
+                merchant_raw = str(payload.get("merchant_label_raw", "")).strip()
+                price = float(payload.get("net_paid", -1))
+                raw_text = str(payload.get("raw_text", "")).strip()
+                if (not raw_text or not product_name or not brand or not merchant_raw
+                        or not 0 < size_ml <= 5000 or not 0 <= price < 1_000_000):
+                    return 400, {"error": "Provide the actual receipt text, merchant, brand, product, size, and price paid."}, "application/json; charset=utf-8"
                 owner_verified_merchant = bool(payload.get("owner_verified_merchant", False))
 
                 if sku not in self.vault.items:
@@ -1047,7 +955,7 @@ class AnnRevealsApplication:
                             size_ml=size_ml,
                             concentration=concentration,
                             store=merchant_raw,
-                            purchase_date=str(payload.get("purchase_date", "2026-10-27")),
+                            purchase_date=str(payload.get("purchase_date", "")),
                             private_price=price,
                             currency="GBP",
                         )
@@ -1065,7 +973,8 @@ class AnnRevealsApplication:
                     discount_amount=float(payload.get("discount_amount", 0.0)),
                     net_paid=price,
                     owner_verified_merchant=owner_verified_merchant,
-                    raw_order_ref=str(payload.get("raw_order_ref") or f"ORD-{uuid.uuid4().hex[:8].upper()}"),
+                    raw_order_ref=str(payload.get("raw_order_ref") or "") or None,
+                    source_type="MANUAL_ENTRY",
                 )
                 self.db.log_audit_event(
                     "OWNER",
@@ -1148,9 +1057,12 @@ class AnnRevealsApplication:
 
             if clean_path == "/api/v1/appeals/ingest":
                 platform = str(payload.get("platform", "tiktok")).lower()
-                post_id = str(payload.get("platform_post_id", "tt_post_99201"))
+                post_id = str(payload.get("platform_post_id", "")).strip()
+                if platform not in {"tiktok", "instagram"} or not post_id:
+                    return 400, {"error": "Provide the platform and the affected post ID."}, "application/json; charset=utf-8"
                 cat_str = str(payload.get("category", "commercial_disclosure")).lower()
                 category = ViolationCategory(cat_str)
+                self.db.freeze_post(platform, post_id)
                 snap = self.vault.get_snapshot(platform, post_id)
                 case = self.appeals_tracker.intake_violation(
                     platform=platform,
@@ -1193,12 +1105,17 @@ class AnnRevealsApplication:
                 )
 
             if clean_path == "/api/v1/ops/backup":
-                source_dir = self.db.db_path.parent
-                snap_file = self.backup_dir / f"araim-backup-{int(time.time())}.enc.json"
-                meta = self.backup_manager.create_backup(
-                    source_dir=source_dir,
-                    output_backup_file=snap_file,
-                )
+                snap_file = self.backup_dir / f"araim-backup-{time.time_ns()}.enc.json"
+                with tempfile.TemporaryDirectory(prefix="araim-backup-") as directory:
+                    snapshot_path = Path(directory) / self.db.db_path.name
+                    with sqlite3.connect(self.db.db_path) as source, sqlite3.connect(snapshot_path) as target:
+                        source.backup(target)
+                    local_key = self.db.db_path.with_name(self.db.db_path.name + ".vault-key")
+                    if local_key.is_file():
+                        shutil.copy2(local_key, Path(directory) / local_key.name)
+                    meta = self.backup_manager.create_backup(
+                        source_dir=directory, output_backup_file=snap_file,
+                    )
                 self.backups_history.insert(0, meta)
                 restored = self.backup_manager.verify_and_restore(
                     backup_file=snap_file,
@@ -1243,8 +1160,10 @@ class AnnRevealsApplication:
                 )
 
             if clean_path == "/api/v1/settings/update":
-                updated = self.db.update_settings(payload)
-                self.db.log_audit_event("OWNER", "SETTINGS_UPDATED", "system_settings", json.dumps(payload))
+                allowed = {key: value for key, value in payload.items()
+                           if key not in {"instagram_mode", "tiktok_mode", "emergency_stop"}}
+                updated = self.db.update_settings(allowed)
+                self.db.log_audit_event("OWNER", "SETTINGS_UPDATED", "system_settings", "Owner updated settings")
                 return (
                     200,
                     _to_jsonable({"status": "ok", "settings": updated, "overview": self.get_dashboard_overview()}),
@@ -1262,8 +1181,18 @@ class AnnRevealsApplication:
                 except Exception as exc:
                     return 400, {"error": str(exc)}, "application/json; charset=utf-8"
 
-            if clean_path == "/api/v1/autopilot/tick":
-                cycle_res = self.run_autopilot_cycle(platform=payload.get("platform"))
+            if clean_path == "/api/v1/tiktok/verify":
+                connection = self.tiktok_worker.verify()
+                return 200, {"status": "ok", "connection": connection, "overview": self.get_dashboard_overview()}, "application/json; charset=utf-8"
+
+            if clean_path == "/api/v1/tiktok/pilot":
+                result = self.tiktok_worker.pilot(
+                    str(payload.get("video_id", "")), str(payload.get("comment_id", "")),
+                )
+                return 200, {"status": result["status"], "result": result, "overview": self.get_dashboard_overview()}, "application/json; charset=utf-8"
+
+            if clean_path in {"/api/v1/autopilot/tick", "/api/v1/tiktok/sync"}:
+                cycle_res = self.run_autopilot_cycle(platform="tiktok" if clean_path.endswith("/sync") else payload.get("platform"))
                 return (
                     200,
                     _to_jsonable({"status": "ok", "cycle": cycle_res, "overview": self.get_dashboard_overview()}),
@@ -1272,15 +1201,17 @@ class AnnRevealsApplication:
 
             if clean_path == "/api/v1/friends/auto-engage":
                 if payload.get("mode") == "group_cycle":
+                    if not self.demo:
+                        return 400, {"error": "Provide a creator post URL and its title or caption"}, "application/json; charset=utf-8"
                     batch = self.friend_group_engager.run_group_auto_comment_cycle(
                         group_id=payload.get("group_id"),
                         emergency_stop=self.kill_switch.emergency_stop_active,
                     )
                     self.db.log_audit_event(
                         "FRIEND_GROUP_AUTOBOT",
-                        "FRIEND_GROUP_AUTO_COMMENT_CYCLE",
+                        "FRIEND_GROUP_DEMO_DRAFTS",
                         str(payload.get("group_id") or "ALL_GROUPS"),
-                        f"Auto-commented on {len(batch)} friend videos",
+                        f"Prepared {len(batch)} example drafts",
                     )
                     return (
                         200,
@@ -1295,6 +1226,18 @@ class AnnRevealsApplication:
                         "application/json; charset=utf-8",
                     )
 
+                video_url = str(payload.get("video_url") or "").strip()
+                platform = str(payload.get("platform") or "").lower()
+                allowed_hosts = {
+                    "instagram": {"instagram.com", "www.instagram.com"},
+                    "tiktok": {"tiktok.com", "www.tiktok.com", "vm.tiktok.com", "vt.tiktok.com"},
+                }
+                url = urllib.parse.urlsplit(video_url)
+                if (url.scheme != "https" or url.hostname not in allowed_hosts.get(platform, set())
+                        or not url.path.strip("/") or url.username or url.password
+                        or not str(payload.get("friend_handle") or "").strip()
+                        or not (payload.get("video_title") or payload.get("video_description"))):
+                    return 400, {"error": "Provide a valid creator post URL, handle, and title or caption"}, "application/json; charset=utf-8"
                 single = self.friend_group_engager.auto_comment_on_friend_video(
                     friend_handle=str(payload.get("friend_handle", "@scentbyclaire")),
                     friend_display_name=str(payload.get("friend_display_name", "")),
@@ -1308,12 +1251,12 @@ class AnnRevealsApplication:
                         )
                     ),
                     group_id=str(payload.get("group_id", "GRP-CLOSE-FRIENDS")),
-                    auto_send=bool(payload.get("auto_send", True)),
+                    auto_send=False,
                     emergency_stop=self.kill_switch.emergency_stop_active,
                 )
                 self.db.log_audit_event(
                     "FRIEND_GROUP_AUTOBOT",
-                    "AUTO_COMMENT_FRIEND_VIDEO",
+                    "DRAFT_COMMENT_FOR_CREATOR_POST",
                     f"{single.platform}:{single.friend_handle}",
                     f"status={single.status} var={single.variation_id}",
                 )
@@ -1353,84 +1296,191 @@ class AnnRevealsApplication:
         return 404, {"error": f"Unknown endpoint: {m} {clean_path}"}, "application/json; charset=utf-8"
 
 
-def create_http_handler(app: AnnRevealsApplication):
-    """Create the HTTP request handler serving both the PWA and `/api/v1/*` JSON endpoints."""
-
-    web_dir = ROOT_DIR / "apps" / "web"
+def create_http_handler(
+    app: AnnRevealsApplication, *, public_origin: str = "", owner: str = "owner", password: str = "",
+):
+    """Serve private dashboard data only to the authenticated owner."""
+    expected = f"{owner}:{password}".encode("utf-8")
+    public_host = urllib.parse.urlsplit(public_origin).netloc if public_origin else ""
+    logger = logging.getLogger(__name__)
 
     class ARAIMRequestHandler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args: Any) -> None:
-            # Suppress noisy stdout access logs during automated tests while keeping clean audit logs
+            # URLs can contain provider event identifiers.
             pass
 
-        def _send_json(self, status_code: int, payload: Any) -> None:
-            body = json.dumps(_to_jsonable(payload), indent=2).encode("utf-8")
-            self.send_response(status_code)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("X-Content-Type-Options", "nosniff")
-            self.send_header("X-Frame-Options", "DENY")
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(body)
-
-        def _send_file(self, file_path: Path, content_type: str) -> None:
-            if not file_path.exists():
-                self._send_json(404, {"error": "File not found"})
-                return
-            data = file_path.read_bytes()
-            self.send_response(200)
+        def _send(self, status: int, payload: Any, content_type: str = "application/json; charset=utf-8", headers=None):
+            if content_type.startswith("application/json"):
+                data = json.dumps(_to_jsonable(payload)).encode("utf-8")
+            else:
+                data = payload if isinstance(payload, bytes) else str(payload).encode("utf-8")
+            self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(data)))
             self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("X-Frame-Options", "DENY")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("Cache-Control", "no-store")
+            for key, value in (headers or {}).items():
+                self.send_header(key, value)
             self.end_headers()
             self.wfile.write(data)
 
-        def _read_json_body(self) -> Dict[str, Any]:
+        def _valid_host(self) -> bool:
+            host = self.headers.get("Host", "").lower()
+            if public_host:
+                return host == public_host.lower()
+            try:
+                parsed = urllib.parse.urlsplit(f"http://{host}")
+                return (parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+                        and not parsed.username and not parsed.password and not parsed.path
+                        and not parsed.query and not parsed.fragment)
+            except ValueError:
+                return False
+
+        def _owner_ok(self) -> bool:
+            if not self._valid_host():
+                self._send(403, {"error": "Unexpected host"})
+                return False
+            if not password:
+                return True
+            scheme, _, value = self.headers.get("Authorization", "").partition(" ")
+            try:
+                authorized = scheme.lower() == "basic" and hmac.compare_digest(
+                    base64.b64decode(value, validate=True), expected,
+                )
+            except (ValueError, binascii.Error):
+                authorized = False
+            if not authorized:
+                self._send(401, {"error": "Owner sign-in required"}, headers={
+                    "WWW-Authenticate": 'Basic realm="Ann Reveals AI Manager", charset="UTF-8"',
+                })
+            return authorized
+
+        def _read_body(self) -> bytes:
             length = int(self.headers.get("Content-Length", "0"))
-            if length <= 0:
-                return {}
-            raw = self.rfile.read(length).decode("utf-8")
-            return json.loads(raw) if raw.strip() else {}
+            if length < 0 or length > 2_000_000:
+                raise ValueError("Invalid request size")
+            return self.rfile.read(length)
+
+        def _dispatch(self, method: str, body=None) -> None:
+            try:
+                status, payload, content_type = app.dispatch_http(method, self.path, body)
+            except (ValueError, TypeError, KeyError):
+                self._send(400, {"error": "Invalid request"})
+                return
+            except Exception as exc:
+                logger.error("Request failed (%s)", type(exc).__name__)
+                self._send(500, {"error": "Request could not be completed"})
+                return
+            self._send(status, payload, content_type)
 
         def do_GET(self) -> None:
-            status, payload, content_type = app.dispatch_http("GET", self.path)
-            if isinstance(payload, bytes):
-                self.send_response(status)
-                self.send_header("Content-Type", content_type)
-                self.send_header("Content-Length", str(len(payload)))
-                self.send_header("X-Content-Type-Options", "nosniff")
-                self.end_headers()
-                self.wfile.write(payload)
-            else:
-                self._send_json(status, payload)
+            if self.path == "/api/v1/health" and not self.headers.get("Authorization"):
+                self._send(200, {"status": "ok"})
+                return
+            if self._owner_ok():
+                self._dispatch("GET")
 
         def do_POST(self) -> None:
-            try:
-                body = self._read_json_body()
-            except Exception as exc:
-                self._send_json(400, {"error": f"Invalid JSON payload: {exc}"})
+            path = urllib.parse.urlsplit(self.path).path
+            if path == "/api/v1/tiktok/webhook":
+                verifier = app.tiktok_webhook_verifier
+                if not verifier:
+                    self._send(404, {"error": "Webhook is not configured"})
+                    return
+                try:
+                    event = verifier.verify_and_parse(self._read_body(), self.headers.get("TikTok-Signature", ""))
+                    if event.business_id != app.tiktok_worker.account:
+                        self._send(403, {"error": "Unexpected TikTok account"})
+                        return
+                    app.tiktok_worker.wakeup.set()
+                except SecurityConfigurationError as exc:
+                    if exc.code != "ERR_WEBHOOK_REPLAY_DETECTED":
+                        self._send(403, {"error": "Webhook verification failed"})
+                        return
+                except (ValueError, TypeError):
+                    self._send(400, {"error": "Invalid webhook"})
+                    return
+                self._send(200, {"status": "accepted"})
                 return
-            status, payload, _ = app.dispatch_http("POST", self.path, body)
-            self._send_json(status, payload)
+            if not self._owner_ok():
+                return
+            origin = self.headers.get("Origin")
+            expected_origin = public_origin or f"http://{self.headers.get('Host', '')}"
+            if ((origin and origin != expected_origin)
+                    or self.headers.get("Sec-Fetch-Site") in {"cross-site", "same-site"}):
+                self._send(403, {"error": "Unexpected origin"})
+                return
+            if self.headers.get_content_type() != "application/json":
+                self._send(415, {"error": "Expected application/json"})
+                return
+            try:
+                body = json.loads(self._read_body() or b"{}")
+                if not isinstance(body, dict):
+                    raise ValueError("Expected object")
+            except (ValueError, TypeError):
+                self._send(400, {"error": "Invalid JSON object"})
+                return
+            self._dispatch("POST", body)
 
     return ARAIMRequestHandler
 
 
 def run_server(host: str = "127.0.0.1", port: int = 8080, db_path: Optional[str] = None) -> None:
-    app = AnnRevealsApplication(db_path=db_path)
-    handler_cls = create_http_handler(app)
+    origin = os.environ.get("ARAIM_PUBLIC_ORIGIN", "").rstrip("/")
+    password = os.environ.get("ARAIM_OWNER_PASSWORD", "")
+    owner = os.environ.get("ARAIM_OWNER_USERNAME", "owner")
+    container_local = os.environ.get("ARAIM_LOCAL_CONTAINER", "").lower() == "true"
+    if host not in ("127.0.0.1", "localhost", "::1") and len(password) < 20:
+        raise SystemExit("Set an owner password of at least 20 characters for a network or container listener.")
+    if host not in ("127.0.0.1", "localhost", "::1") and not container_local and not origin:
+        raise SystemExit("Set ARAIM_PUBLIC_ORIGIN and ARAIM_OWNER_PASSWORD for a public server.")
+    if origin:
+        parsed = urllib.parse.urlsplit(origin)
+        if (parsed.scheme != "https" or not parsed.hostname or parsed.path
+                or parsed.query or parsed.fragment or parsed.username or parsed.password
+                or len(password) < 20 or not owner or ":" in owner
+                or len(os.environ.get("ARAIM_MASTER_KEY", "")) < 32):
+            raise SystemExit("Use an HTTPS ARAIM_PUBLIC_ORIGIN, owner password of at least 20 characters and ARAIM_MASTER_KEY of at least 32 characters.")
+    app = AnnRevealsApplication(db_path=db_path, demo=os.environ.get("ARAIM_DEMO_MODE") == "true")
+    if app.tiktok_worker.writes_enabled and (app.demo or not origin):
+        raise SystemExit("Live TikTok writes require the authenticated HTTPS owner deployment.")
+    handler_cls = create_http_handler(app, public_origin=origin, owner=owner, password=password)
     server = ThreadingHTTPServer((host, port), handler_cls)
-    print(f"Ann Reveals AI Manager v4.0 running at http://{host}:{port}")
+    stop = threading.Event()
+
+    def poll() -> None:
+        interval = 90
+        while not stop.is_set():
+            app.tiktok_worker.wakeup.clear()
+            try:
+                app.tiktok_worker.sync()
+            except Exception as exc:
+                logging.getLogger(__name__).error("TikTok sync failed (%s)", type(exc).__name__)
+            # Keep a polling floor even when multiple webhook events arrive.
+            if stop.wait(10):
+                break
+            app.tiktok_worker.wakeup.wait(interval - 10)
+
+    worker = None
+    if app.tiktok_worker.configured and not app.demo:
+        worker = threading.Thread(target=poll, name="tiktok-sync", daemon=True)
+        worker.start()
+    print(f"Ann Reveals AI Manager running at http://{host}:{port}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        stop.set()
+        app.tiktok_worker.wakeup.set()
         server.server_close()
+        if worker:
+            worker.join(timeout=5)
 
 
 if __name__ == "__main__":
     port_env = int(os.environ.get("PORT", "8080"))
-    host_env = os.environ.get("HOST", "0.0.0.0")
+    host_env = os.environ.get("HOST", "127.0.0.1")
     run_server(host=host_env, port=port_env)

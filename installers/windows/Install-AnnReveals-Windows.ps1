@@ -1,33 +1,29 @@
-<#
-.SYNOPSIS
-    Installs Ann Reveals AI Manager v4.0 as a native Desktop & Start Menu application on Windows 10/11.
-#>
-$ErrorActionPreference = "Stop"
+param(
+    [string]$AppUrl
+)
 
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ProjectRoot = (Resolve-Path (Join-Path $ScriptDir "..\..")).Path
-$LauncherBat = Join-Path $ScriptDir "Start-AnnReveals-Windows.bat"
+$ErrorActionPreference = 'Stop'
+if (-not $AppUrl) {
+    $AppUrl = Read-Host 'Enter your hosted Ann Reveals HTTPS address'
+}
 
-Write-Host "Installing Ann Reveals AI Manager v4.0 on Windows..." -ForegroundColor Cyan
+$address = $null
+if (-not [Uri]::TryCreate($AppUrl.Trim(), [UriKind]::Absolute, [ref]$address) -or
+    $address.Scheme -ne 'https' -or -not $address.Host -or $address.UserInfo) {
+    throw 'Enter an HTTPS address without embedded credentials.'
+}
 
-$WshShell = New-Object -ComObject WScript.Shell
+$shortcutName = 'Ann Reveals AI Manager.url'
+$shortcut = "[InternetShortcut]`r`nURL=$($address.AbsoluteUri)"
+foreach ($folder in @(
+    [Environment]::GetFolderPath('Desktop'),
+    [Environment]::GetFolderPath('Programs')
+)) {
+    if (-not $folder) {
+        throw 'Windows did not return the Desktop or Start Menu folder.'
+    }
+    Set-Content -LiteralPath (Join-Path $folder $shortcutName) -Value $shortcut -Encoding Ascii
+}
 
-# 1. Create Desktop Shortcut
-$DesktopPath = [Environment]::GetFolderPath("Desktop")
-$DesktopShortcut = $WshShell.CreateShortcut((Join-Path $DesktopPath "Ann Reveals AI Manager.lnk"))
-$DesktopShortcut.TargetPath = $LauncherBat
-$DesktopShortcut.WorkingDirectory = $ProjectRoot
-$DesktopShortcut.Description = "Ann Reveals AI Manager v4.0 — Instagram & TikTok Auto-Pilot"
-$DesktopShortcut.Save()
-
-# 2. Create Start Menu Shortcut
-$StartMenuPath = [Environment]::GetFolderPath("Programs")
-$StartShortcut = $WshShell.CreateShortcut((Join-Path $StartMenuPath "Ann Reveals AI Manager.lnk"))
-$StartShortcut.TargetPath = $LauncherBat
-$StartShortcut.WorkingDirectory = $ProjectRoot
-$StartShortcut.Description = "Ann Reveals AI Manager v4.0 — Instagram & TikTok Auto-Pilot"
-$StartShortcut.Save()
-
-Write-Host "✅ Installed 'Ann Reveals AI Manager' on your Windows Desktop and Start Menu!" -ForegroundColor Green
-Write-Host "Launching Ann Reveals AI Manager now..." -ForegroundColor Cyan
-Start-Process -FilePath $LauncherBat
+Write-Host 'Ann Reveals shortcuts are available on the Desktop and Start menu.'
+Start-Process -FilePath $address.AbsoluteUri

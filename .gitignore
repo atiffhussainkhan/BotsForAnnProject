@@ -14,3 +14,11 @@ data/backups/
 # OS & editor files
 .DS_Store
 .env
+
+# Local build caches and private runtime data
+.venv-crypto/
+.cargo-build/
+.python-runtime/
+.uv-cache/
+data/
+*.vault-key

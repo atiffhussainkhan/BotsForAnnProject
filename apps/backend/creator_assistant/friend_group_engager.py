@@ -581,8 +581,7 @@ class FriendGroupAutoEngager:
         emergency_stop: bool = False,
     ) -> FriendAutoCommentResult:
         """
-        Scrape a friend's video, generate a personalized human comment from the 54,000+
-        friend vocabulary, and dispatch it automatically (or save as 1-tap draft if paused).
+        Create a manual draft from metadata supplied by the owner.
         """
         grp = self.groups.get(group_id) or next(iter(self.groups.values()))
         clean_handle = friend_handle.strip()
@@ -605,18 +604,8 @@ class FriendGroupAutoEngager:
         vid, jitter_str = vid_and_jitter.split(":")
         jitter_sec = int(jitter_str)
 
-        can_auto = bool(
-            auto_send
-            and grp.auto_engage_enabled
-            and (member.auto_comment_enabled if member else True)
-            and not emergency_stop
-        )
-        status = "AUTO_COMMENTED_ON_FRIEND_VIDEO" if can_auto else "DRAFT_READY_FOR_1TAP_COPY"
+        status = "DRAFT_READY_FOR_1TAP_COPY"
         now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-
-        if member and can_auto:
-            member.comments_posted_count += 1
-            member.last_commented_at = now_iso
 
         meta_profile = DailyVideoMetadataAnalyzer.analyze_video_metadata(
             creator_handle=clean_handle,
@@ -659,8 +648,7 @@ class FriendGroupAutoEngager:
         emergency_stop: bool = False,
     ) -> List[FriendAutoCommentResult]:
         """
-        Scan active Friend Groups for new friend videos, scrape each friend's video notes,
-        and automatically post unique human comments across the group.
+        Generate example drafts from the bundled demonstration videos.
         """
         if emergency_stop:
             return []

@@ -1,0 +1,97 @@
+name: Ann Reveals verification
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      TIKTOK_WRITE_ENABLED: "false"
+      INSTAGRAM_WRITE_ENABLED: "false"
+      THIRD_PARTY_AUTOCOMMENT: "false"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install runtime dependencies
+        run: python3 -m pip install --requirement requirements.txt
+
+      - name: Verify default settings and JavaScript
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          settings = {
+              key: value.strip('"\x27')
+              for line in Path(".env.example").read_text().splitlines()
+              if line and not line.startswith("#") and "=" in line
+              for key, value in [line.split("=", 1)]
+          }
+          for flag in ("TIKTOK_WRITE_ENABLED", "INSTAGRAM_WRITE_ENABLED", "THIRD_PARTY_AUTOCOMMENT"):
+              assert settings.get(flag) == "false", flag
+          PY
+          node --check apps/web/sw.js
+
+      - name: Run dashboard and PWA tests
+        run: node --test tests/web/*.test.cjs
+
+      - name: Run application, integration and backup tests
+        run: python3 -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Start the packaged app
+        run: |
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import secrets
+          print("ARAIM_OWNER_PASSWORD=" + secrets.token_urlsafe(32))
+          PY
+      - name: Start the CI container
+        run: docker compose up --build --detach --wait --wait-timeout 90
+
+      - name: Check the dashboard and installable app assets over HTTP
+        run: |
+          python3 - <<'PY'
+          import json
+          import base64
+          import os
+          import struct
+          from urllib.request import Request, urlopen
+
+          base = "http://127.0.0.1:8000"
+          def read(path, mime):
+              credential = base64.b64encode(("owner:" + os.environ["ARAIM_OWNER_PASSWORD"]).encode()).decode()
+              request = Request(base + path, headers={"Authorization": "Basic " + credential})
+              with urlopen(request, timeout=5) as response:
+                  assert response.headers.get_content_type() == mime, path
+                  return response.read()
+
+          read("/api/v1/health", "application/json")
+          assert b"Ann Reveals AI Manager" in read("/", "text/html")
+          manifest = json.loads(read("/manifest.json", "application/manifest+json"))
+          assert manifest["display"] == "standalone"
+          assert {icon["sizes"] for icon in manifest["icons"]} == {"192x192", "512x512"}
+          for icon in manifest["icons"]:
+              image = read(icon["src"], "image/png")
+              assert image.startswith(b"\x89PNG\r\n\x1a\n")
+              assert struct.unpack(">II", image[16:24]) == tuple(map(int, icon["sizes"].split("x")))
+          read("/offline.html", "text/html")
+          read("/sw.js", "application/javascript")
+          PY
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Stop the CI container
+        if: always()
+        run: docker compose down

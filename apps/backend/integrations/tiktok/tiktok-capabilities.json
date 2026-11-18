@@ -59,13 +59,25 @@
       "capability_id": "TT-CAP-04",
       "api_family": "TikTok Accounts API v1.3",
       "http_method": "POST",
-      "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/comment/reply/",
+      "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/comment/reply/create/",
       "required_scopes": ["comment.list.manage"],
       "requires_write_flag": true,
       "march_20_2026_gate": true,
       "live_status": "AWAITING_APPROVAL",
       "sandbox_status": "VERIFIED_ACTIVE",
       "fallback_mode": "DRAFT_ONLY_ONE_TAP_COPY"
+    },
+    "list_comment_replies": {
+      "capability_id": "TT-CAP-13",
+      "api_family": "TikTok Accounts API v1.3",
+      "http_method": "GET",
+      "endpoint": "https://business-api.tiktok.com/open_api/v1.3/business/comment/reply/list/",
+      "required_scopes": ["comment.list"],
+      "requires_write_flag": false,
+      "march_20_2026_gate": true,
+      "live_status": "AWAITING_APPROVAL",
+      "sandbox_status": "VERIFIED_ACTIVE",
+      "fallback_mode": "WEBHOOK_OR_MANUAL_QUEUE"
     },
     "create_comment_on_owned_post": {
       "capability_id": "TT-CAP-05",

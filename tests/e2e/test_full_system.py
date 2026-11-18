@@ -39,6 +39,7 @@ class TestFullSystemE2E(unittest.TestCase):
         cls.app = AnnRevealsApplication(
             db_path=tmp_path / "test_araim.db",
             backup_dir=tmp_path / "backups",
+            demo=True,
         )
 
     @classmethod
@@ -307,48 +308,25 @@ class TestFullSystemE2E(unittest.TestCase):
         self.assertTrue((ROOT_DIR / "installers" / "android" / "capacitor.config.json").exists())
         self.assertTrue((ROOT_DIR / "dist" / "AnnRevealsAIManager-Portable.html").exists())
 
-        # 2. Configure & sign in Instagram account in-app with Auto-Pilot enabled
-        ig_status, ig_res = self._post_json(
-            "/api/v1/accounts/configure",
-            {
-                "platform": "instagram",
-                "account_handle": "@annreveals",
-                "app_id": "IG-PRO-ANNREVEALS-UK",
-                "access_token": "ig_oauth_live_annreveals_verified_token_2026",
+        # Submitted booleans cannot claim OAuth or publish permission.
+        for platform in ("instagram", "tiktok"):
+            status, response = self._post_json("/api/v1/accounts/configure", {
+                "platform": platform,
+                "connect_oauth": True,
                 "grant_write_scope": True,
                 "verify_pilot": True,
                 "enable_auto_pilot": True,
-            },
-        )
-        self.assertEqual(ig_status, 200)
-        self.assertTrue(ig_res["account"]["connected"])
-        self.assertTrue(ig_res["account"]["auto_pilot_enabled"])
-        self.assertEqual(ig_res["overview"]["platforms"]["instagram"]["mode"], "SAFE_AUTO")
+            })
+            self.assertEqual(status, 200)
+            self.assertFalse(response["account"]["connected"])
+            self.assertFalse(response["account"]["auto_pilot_enabled"])
+            self.assertNotEqual(response["overview"]["platforms"][platform]["mode"], "SAFE_AUTO")
 
-        # 3. Configure & sign in TikTok account in-app with Auto-Pilot enabled
-        tt_status, tt_res = self._post_json(
-            "/api/v1/accounts/configure",
-            {
-                "platform": "tiktok",
-                "account_handle": "@annreveals",
-                "app_id": "TT-BIZ-ANNREVEALS-1.3",
-                "access_token": "tt_oauth_live_annreveals_verified_token_2026",
-                "grant_write_scope": True,
-                "verify_pilot": True,
-                "enable_auto_pilot": True,
-            },
-        )
-        self.assertEqual(tt_status, 200)
-        self.assertTrue(tt_res["account"]["connected"])
-        self.assertTrue(tt_res["account"]["auto_pilot_enabled"])
-        self.assertEqual(tt_res["overview"]["platforms"]["tiktok"]["mode"], "SAFE_AUTO")
-
-        # 4. Run automatic background worker cycle (/api/v1/autopilot/tick)
-        tick_status, tick_res = self._post_json("/api/v1/autopilot/tick", {})
-        self.assertEqual(tick_status, 200)
-        self.assertEqual(tick_res["cycle"]["processed_count"], 2)
-        self.assertGreaterEqual(tick_res["overview"]["accounts"]["instagram"]["auto_replies_sent"], 1)
-        self.assertGreaterEqual(tick_res["overview"]["accounts"]["tiktok"]["auto_replies_sent"], 1)
+        status, response = self._post_json("/api/v1/autopilot/tick", {})
+        self.assertEqual(status, 200)
+        self.assertEqual(response["cycle"]["status"], "awaiting_credentials")
+        self.assertEqual(response["cycle"]["processed_count"], 0)
+        self.assertEqual(response["overview"]["accounts"]["tiktok"]["auto_replies_sent"], 0)
 
     def test_10_friend_groups_auto_comment_bot(self) -> None:
         # 1. Add a friend to an Auto-Comment Group
@@ -367,7 +345,7 @@ class TestFullSystemE2E(unittest.TestCase):
         fg_summary = add_res["overview"]["friend_groups"]
         self.assertGreaterEqual(fg_summary["friend_vocabulary_size"], 50000)
 
-        # 2. Scrape & auto-comment on a single friend video
+        # 2. Draft a response from the submitted post metadata
         eng_status, eng_res = self._post_json(
             "/api/v1/friends/auto-engage",
             {
@@ -383,7 +361,7 @@ class TestFullSystemE2E(unittest.TestCase):
         )
         self.assertEqual(eng_status, 200)
         ac = eng_res["auto_comment"]
-        self.assertEqual(ac["status"], "AUTO_COMMENTED_ON_FRIEND_VIDEO")
+        self.assertEqual(ac["status"], "DRAFT_READY_FOR_1TAP_COPY")
         self.assertIn("iris", ac["scraped_notes"])
         self.assertIn("Chloe", ac["comment_posted"])
         self.assertEqual(ac["video_format_type"], "LAYERING_ROUTINE")
@@ -391,13 +369,14 @@ class TestFullSystemE2E(unittest.TestCase):
         self.assertTrue(len(ac["core_showcase_focus"]) > 10)
         self.assertGreaterEqual(len(eng_res["overview"]["friend_groups"]["daily_scraped_videos"]), 1)
 
-        # 3. Run full Friend Group Auto-Comment Cycle across all groups
+        # 3. Demonstration group cycle generates examples only
         cyc_status, cyc_res = self._post_json(
             "/api/v1/friends/auto-engage",
             {"mode": "group_cycle"},
         )
         self.assertEqual(cyc_status, 200)
         self.assertGreaterEqual(cyc_res["count"], 3)
+        self.assertTrue(all(action["status"] == "DRAFT_READY_FOR_1TAP_COPY" for action in cyc_res["auto_comments"]))
 
 
 if __name__ == "__main__":

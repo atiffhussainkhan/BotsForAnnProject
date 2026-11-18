@@ -6,7 +6,7 @@ app = "ann-reveals-ai-manager"
 primary_region = "lhr"
 
 [build]
-  dockerfile = "../docker/Dockerfile"
+  dockerfile = "infra/docker/Dockerfile"
 
 [env]
   APP_ENV = "production"
@@ -36,7 +36,7 @@ primary_region = "lhr"
     timeout = "5s"
     grace_period = "10s"
     method = "GET"
-    path = "/api/health"
+    path = "/api/v1/health"
 
 [[vm]]
   cpu_kind = "shared"

@@ -8,6 +8,7 @@ and maintains durable state across all 19 core entities defined in Section O.
 from __future__ import annotations
 
 import json
+from contextlib import closing
 import os
 import sqlite3
 import threading
@@ -30,6 +31,8 @@ class DatabaseManager:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._init_schema_and_seed()
+        if os.name == "posix":
+            self.db_path.chmod(0o600)
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
@@ -42,6 +45,13 @@ class DatabaseManager:
             try:
                 sql = MIGRATION_FILE.read_text(encoding="utf-8")
                 conn.executescript(sql)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS automation_post_freezes (
+                        platform TEXT NOT NULL,
+                        post_id TEXT NOT NULL,
+                        PRIMARY KEY(platform, post_id)
+                    )
+                """)
                 now = datetime.now(timezone.utc).isoformat()
 
                 # Seed Owner User
@@ -280,3 +290,24 @@ class DatabaseManager:
                 return [r["name"] for r in cur.fetchall()]
             finally:
                 conn.close()
+
+    def freeze_post(self, platform: str, post_id: str) -> None:
+        with self._lock, closing(self._connect()) as db, db:
+            db.execute(
+                "INSERT OR IGNORE INTO automation_post_freezes VALUES (?, ?)",
+                (platform, post_id),
+            )
+
+    def is_post_frozen(self, platform: str, post_id: str) -> bool:
+        with self._lock, closing(self._connect()) as db:
+            return db.execute(
+                "SELECT 1 FROM automation_post_freezes WHERE platform=? AND post_id=?",
+                (platform, post_id),
+            ).fetchone() is not None
+
+    def frozen_posts(self) -> List[str]:
+        with self._lock, closing(self._connect()) as db:
+            return [
+                f"{row['platform']}:{row['post_id']}"
+                for row in db.execute("SELECT platform, post_id FROM automation_post_freezes")
+            ]

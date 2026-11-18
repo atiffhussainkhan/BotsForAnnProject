@@ -1,27 +1,48 @@
-const CACHE_NAME = 'ann-reveals-ai-manager-v4';
-const ASSETS = ['/', '/index.html', '/manifest.json'];
+const CACHE_PREFIX = 'ann-reveals-ai-manager-';
+const CACHE_NAME = CACHE_PREFIX + 'install-v1';
+const OFFLINE_PAGE = '/offline.html';
+const PUBLIC_FILES = [
+  OFFLINE_PAGE,
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/icon-512-maskable.png',
+];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
-  );
-  self.skipWaiting();
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    await cache.addAll(PUBLIC_FILES);
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
-  );
-  self.clients.claim();
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((key) =>
+      key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME
+    ).map((key) => caches.delete(key)));
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET' || event.request.url.includes('/api/')) {
+  const request = event.request;
+  const url = new URL(request.url);
+  if (request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/')) {
     return;
   }
-  event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request))
-  );
+  if (request.mode === 'navigate' && (url.pathname === '/' || url.pathname === '/index.html')) {
+    event.respondWith(fetch(request).catch(async () => {
+      const cache = await caches.open(CACHE_NAME);
+      return (await cache.match(OFFLINE_PAGE)) ?? Response.error();
+    }));
+    return;
+  }
+  if (PUBLIC_FILES.includes(url.pathname)) {
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE_NAME);
+      return (await cache.match(url.pathname)) ?? fetch(request);
+    })());
+  }
 });

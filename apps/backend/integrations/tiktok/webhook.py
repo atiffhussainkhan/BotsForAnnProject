@@ -8,12 +8,14 @@ Accounts API v1.3 (`https://business-api.tiktok.com/gateway/docs/index?doc_id=17
 - Self-comment loop guard (`FR-003`) so `@annreveals` never auto-replies to her own comments.
 """
 
+from collections import OrderedDict
 from dataclasses import dataclass
 import hashlib
 import hmac
 import json
+from threading import Lock
 import time
-from typing import Any, Dict, Optional, Set, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from .models import SecurityConfigurationError, TikTokComment
 
@@ -37,12 +39,15 @@ class TikTokWebhookVerifier:
     """Verifies TikTok Business API webhook signatures, freshness, and replay state."""
 
     DEFAULT_MAX_SKEW_SECONDS = 300
+    MAX_REPLAY_ENTRIES = 10_000
 
     def __init__(
         self,
         client_secret: str,
         owned_business_id: str = "annreveals_biz_001",
         max_skew_seconds: int = DEFAULT_MAX_SKEW_SECONDS,
+        *,
+        expected_client_key: Optional[str] = None,
     ) -> None:
         if not client_secret or not client_secret.strip():
             raise SecurityConfigurationError(
@@ -52,13 +57,14 @@ class TikTokWebhookVerifier:
         self._client_secret = client_secret.encode("utf-8")
         self._owned_business_id = owned_business_id
         self._max_skew_seconds = max_skew_seconds
-        self._processed_keys: Set[str] = set()
+        self._expected_client_key = expected_client_key
+        self._processed_keys: OrderedDict[str, float] = OrderedDict()
+        self._replay_lock = Lock()
 
     @staticmethod
     def compute_signature(client_secret: str, timestamp: int, raw_body: bytes) -> str:
         """Compute the expected hex HMAC-SHA256 signature for `<timestamp>.<raw_body>`."""
-        body_text = raw_body.decode("utf-8")
-        signing_input = f"{timestamp}.{body_text}".encode("utf-8")
+        signing_input = f"{timestamp}.".encode("ascii") + raw_body
         return hmac.new(
             client_secret.encode("utf-8"),
             signing_input,
@@ -111,7 +117,7 @@ class TikTokWebhookVerifier:
         self,
         raw_body: bytes,
         signature_header: str,
-        now_epoch: Optional[ float] = None,
+        now_epoch: Optional[float] = None,
     ) -> VerifiedWebhookEvent:
         """Verify HMAC-SHA256 signature, check timestamp freshness, guard against replays, and parse event."""
         current_time = float(now_epoch if now_epoch is not None else time.time())
@@ -134,10 +140,10 @@ class TikTokWebhookVerifier:
                 code="ERR_WEBHOOK_BODY_ENCODING",
             ) from exc
 
-        signing_input = f"{timestamp}.{body_text}".encode("utf-8")
+        signing_input = f"{timestamp}.".encode("ascii") + raw_body
         expected_sig = hmac.new(self._client_secret, signing_input, hashlib.sha256).hexdigest()
 
-        if not hmac.compare_digest(expected_sig.lower(), provided_sig.lower()):
+        if not provided_sig.isascii() or not hmac.compare_digest(expected_sig, provided_sig.lower()):
             raise SecurityConfigurationError(
                 "Webhook HMAC-SHA256 signature verification failed",
                 code="ERR_WEBHOOK_SIGNATURE_MISMATCH",
@@ -152,21 +158,33 @@ class TikTokWebhookVerifier:
                 code="ERR_WEBHOOK_JSON_INVALID",
             ) from exc
 
-        event_id = str(payload.get("event_id") or payload.get("log_id") or f"evt_{timestamp}")
+        if not isinstance(payload, dict):
+            raise SecurityConfigurationError("Webhook body must be a JSON object.", code="ERR_WEBHOOK_JSON_INVALID")
+        if self._expected_client_key is not None and (
+            payload.get("client_key") != self._expected_client_key
+            or payload.get("user_openid") != self._owned_business_id
+            or payload.get("event") != "comment.update"
+        ):
+            raise SecurityConfigurationError(
+                "Unexpected TikTok webhook app, account or event type.", code="ERR_WEBHOOK_ACCOUNT_MISMATCH"
+            )
+        event_id = str(payload.get("event_id") or payload.get("log_id") or hashlib.sha256(raw_body).hexdigest())
         event_type = str(payload.get("event") or payload.get("event_type") or "comment.update")
-        business_id = str(payload.get("business_id") or payload.get("user_openid") or self._owned_business_id)
+        business_id = str(payload.get("user_openid") or payload.get("business_id") or self._owned_business_id)
         content = payload.get("content") or payload.get("data") or {}
+        if isinstance(content, str):
+            try:
+                content = json.loads(content)
+            except json.JSONDecodeError as exc:
+                raise SecurityConfigurationError(
+                    "Webhook content is not valid JSON.", code="ERR_WEBHOOK_JSON_INVALID"
+                ) from exc
+        if not isinstance(content, dict):
+            raise SecurityConfigurationError("Webhook content must be an object.", code="ERR_WEBHOOK_JSON_INVALID")
         video_id = str(content.get("video_id") or payload.get("video_id") or "")
         comment_id = str(content.get("comment_id") or payload.get("comment_id") or "")
 
         dedup_key = f"tiktok:{business_id}:{event_id}:{comment_id}"
-        if dedup_key in self._processed_keys:
-            raise SecurityConfigurationError(
-                f"Duplicate webhook replay detected for key '{dedup_key}'",
-                code="ERR_WEBHOOK_REPLAY_DETECTED",
-            )
-        self._processed_keys.add(dedup_key)
-
         comment_obj: Optional[TikTokComment] = None
         should_ignore_self = False
 
@@ -174,7 +192,8 @@ class TikTokWebhookVerifier:
             sender_user_id = str(content.get("user_id") or content.get("comment_user_id") or "")
             sender_username = str(content.get("username") or content.get("unique_id") or "viewer")
             is_self_author = bool(
-                content.get("is_self_author", False)
+                content.get("owner") is True
+                or content.get("is_self_author") is True
                 or (sender_user_id and sender_user_id == self._owned_business_id)
                 or sender_username.lower().lstrip("@") == "annreveals"
             )
@@ -194,6 +213,19 @@ class TikTokWebhookVerifier:
                 status=str(content.get("status") or "PUBLIC"),
                 like_count=int(content.get("likes") or content.get("like_count") or 0),
             )
+
+        with self._replay_lock:
+            cutoff = current_time - 2 * self._max_skew_seconds
+            while self._processed_keys and next(iter(self._processed_keys.values())) < cutoff:
+                self._processed_keys.popitem(last=False)
+            if dedup_key in self._processed_keys:
+                raise SecurityConfigurationError(
+                    "Duplicate TikTok webhook was already handled.",
+                    code="ERR_WEBHOOK_REPLAY_DETECTED",
+                )
+            if len(self._processed_keys) >= self.MAX_REPLAY_ENTRIES:
+                self._processed_keys.popitem(last=False)
+            self._processed_keys[dedup_key] = current_time
 
         return VerifiedWebhookEvent(
             event_id=event_id,

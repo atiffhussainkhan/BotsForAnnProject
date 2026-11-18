@@ -161,6 +161,7 @@ class TikTokComment:
     is_self_author: bool = False
     status: str = "PUBLIC"
     like_count: int = 0
+    reply_count: int = 0
 
 
 @dataclass(frozen=True)

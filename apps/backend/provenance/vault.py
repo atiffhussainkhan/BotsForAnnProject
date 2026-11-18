@@ -16,6 +16,9 @@ import json
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from functools import wraps
+from pathlib import Path
+import threading
 from typing import Dict, List, Optional, Set
 
 from apps.backend.provenance.matcher import (
@@ -25,8 +28,32 @@ from apps.backend.provenance.matcher import (
     ReceiptRecord,
     VaultConfidenceStatus,
 )
-from apps.backend.provenance.merchant_normalizer import MerchantNormalizer
+from apps.backend.platform_ops.security import EnvelopeEncryptor
+from apps.backend.provenance.merchant_normalizer import MerchantNormalizer, NormalizedMerchant
 from apps.backend.provenance.redactor import ReceiptRedactor
+from apps.backend.provenance.storage import VaultStorage
+
+
+def _durable_change(method):
+    """Serialize mutations and restore the prior state if storage fails."""
+    @wraps(method)
+    def change(self, *args, **kwargs):
+        with self._lock:
+            if self._storage is None:
+                return method(self, *args, **kwargs)
+            before = self._storage_state()
+            try:
+                result = method(self, *args, **kwargs)
+                self._storage.save(self._storage_state())
+            except Exception:
+                self._restore_storage_state(before)
+                raise
+            return result
+    return change
+
+
+def _restore_with_status(model, payload, field_name="status"):
+    return model(**{**payload, field_name: VaultConfidenceStatus(payload[field_name])})
 
 
 @dataclass
@@ -111,6 +138,9 @@ class VerifiedPurchasesVault:
     def __init__(
         self,
         owner_emails: Optional[List[str]] = None,
+        *,
+        storage_path: str | Path | None = None,
+        encryptor: EnvelopeEncryptor | None = None,
     ) -> None:
         self.owner_emails: List[str] = owner_emails or ["ann@annreveals.co.uk", "ann.reveals@gmail.com"]
         self.redactor = ReceiptRedactor()
@@ -127,11 +157,71 @@ class VerifiedPurchasesVault:
         self.immutable_snapshots: Dict[str, ImmutableEvidenceSnapshot] = {}
         self.contradiction_alerts: List[RetroactiveContradictionAlert] = []
 
+        self._lock = threading.RLock()
+        self._storage = VaultStorage(storage_path, encryptor) if storage_path is not None else None
+        if self._storage is not None:
+            saved = self._storage.load()
+            if saved is not None:
+                self._restore_storage_state(saved)
+
+    def _storage_state(self) -> dict:
+        return {
+            "version": 1,
+            "items": {key: asdict(item) for key, item in self.items.items()},
+            "receipts": {key: asdict(item) for key, item in self.receipts.items()},
+            "matches": {key: asdict(item) for key, item in self.match_results_by_sku.items()},
+            "orders": sorted(self.seen_order_ref_hashes),
+            "post_records": {key: asdict(item) for key, item in self.post_records.items()},
+            "snapshots": {key: asdict(item) for key, item in self.immutable_snapshots.items()},
+            "contradictions": [asdict(item) for item in self.contradiction_alerts],
+        }
+
+    def _restore_storage_state(self, state: dict) -> None:
+        if state["version"] != 1:
+            raise ValueError("Unsupported purchase vault version.")
+        self.items = {
+            key: _restore_with_status(PerfumeItem, item) for key, item in state["items"].items()
+        }
+        self.receipts = {
+            key: ReceiptRecord(**{**item, "merchant": NormalizedMerchant(**item["merchant"])})
+            for key, item in state["receipts"].items()
+        }
+        self.match_results_by_sku = {
+            key: _restore_with_status(MatchResult, item) for key, item in state["matches"].items()
+        }
+        self.seen_order_ref_hashes = set(state["orders"])
+        self.post_records = {
+            key: _restore_with_status(PostProvenanceRecord, item, "vault_status")
+            for key, item in state["post_records"].items()
+        }
+        self.immutable_snapshots = {
+            key: ImmutableEvidenceSnapshot(**item) for key, item in state["snapshots"].items()
+        }
+        self.contradiction_alerts = [
+            RetroactiveContradictionAlert(**item) for item in state["contradictions"]
+        ]
+
+    def dashboard_records(self) -> list[dict]:
+        """Capture consistent item and redacted receipt records for the owner UI."""
+        with self._lock:
+            records = []
+            for sku, item in self.items.items():
+                match = self.match_results_by_sku.get(sku)
+                receipt = self.receipts.get(match.receipt_id) if match and match.receipt_id else None
+                records.append({
+                    "item": asdict(item),
+                    "match": asdict(match) if match else None,
+                    "receipt": asdict(receipt) if receipt else None,
+                })
+            return records
+
+    @_durable_change
     def register_item(self, item: PerfumeItem) -> PerfumeItem:
         """Add or update a `PerfumeItem` in the catalog (FR-018)."""
         self.items[item.sku] = item
         return item
 
+    @_durable_change
     def ingest_receipt_for_item(
         self,
         sku: str,
@@ -209,8 +299,12 @@ class VerifiedPurchasesVault:
 
         return match_result
 
+    @_durable_change
     def evaluate_item_without_receipt(self, sku: str) -> MatchResult:
         """Evaluate an item that has no uploaded receipt proof."""
+        return self._evaluate_item_without_receipt(sku)
+
+    def _evaluate_item_without_receipt(self, sku: str) -> MatchResult:
         if sku not in self.items:
             raise KeyError(f"PerfumeItem SKU '{sku}' not found in Vault.")
         item = self.items[sku]
@@ -220,6 +314,7 @@ class VerifiedPurchasesVault:
         self.match_results_by_sku[sku] = match_result
         return match_result
 
+    @_durable_change
     def confirm_merchant_for_receipt(
         self,
         sku: str,
@@ -259,6 +354,7 @@ class VerifiedPurchasesVault:
         self.match_results_by_sku[sku] = match_result
         return match_result
 
+    @_durable_change
     def create_post_provenance_record(
         self,
         platform: str,
@@ -274,7 +370,7 @@ class VerifiedPurchasesVault:
         if sku not in self.items:
             raise KeyError(f"PerfumeItem SKU '{sku}' not found in Vault.")
         item = self.items[sku]
-        match_result = self.match_results_by_sku.get(sku) or self.evaluate_item_without_receipt(sku)
+        match_result = self.match_results_by_sku.get(sku) or self._evaluate_item_without_receipt(sku)
         receipt = self.receipts.get(match_result.receipt_id) if match_result.receipt_id else None
 
         record = PostProvenanceRecord(
@@ -300,6 +396,7 @@ class VerifiedPurchasesVault:
         self.post_records[key] = record
         return record
 
+    @_durable_change
     def create_immutable_snapshot(
         self,
         platform: str,
@@ -316,9 +413,12 @@ class VerifiedPurchasesVault:
         """
         Capture an immutable upload-time evidence snapshot (FR-028, FR-057).
         """
+        key = f"{platform.lower()}:{platform_post_id}"
+        if key in self.immutable_snapshots:
+            return self.immutable_snapshots[key]
         if sku not in self.items:
             raise KeyError(f"PerfumeItem SKU '{sku}' not found in Vault.")
-        match_result = self.match_results_by_sku.get(sku) or self.evaluate_item_without_receipt(sku)
+        match_result = self.match_results_by_sku.get(sku) or self._evaluate_item_without_receipt(sku)
         receipt = self.receipts.get(match_result.receipt_id) if match_result.receipt_id else None
 
         created_at = datetime.now(timezone.utc).isoformat()
@@ -361,7 +461,6 @@ class VerifiedPurchasesVault:
             created_at=created_at,
             snapshot_checksum=checksum,
         )
-        key = f"{platform.lower()}:{platform_post_id}"
         self.immutable_snapshots[key] = snapshot
         return snapshot
 
@@ -408,8 +507,9 @@ class VerifiedPurchasesVault:
 
     def export_redacted_vault_summary(self) -> Dict[str, object]:
         """Export a UK GDPR compliant, PII-redacted summary of the Vault."""
-        return {
-            "items": {sku: asdict(item) for sku, item in self.items.items()},
-            "snapshots": {k: asdict(snap) for k, snap in self.immutable_snapshots.items()},
-            "contradiction_alerts": [asdict(a) for a in self.contradiction_alerts],
-        }
+        with self._lock:
+            return {
+                "items": {sku: asdict(item) for sku, item in self.items.items()},
+                "snapshots": {key: asdict(snap) for key, snap in self.immutable_snapshots.items()},
+                "contradiction_alerts": [asdict(alert) for alert in self.contradiction_alerts],
+            }

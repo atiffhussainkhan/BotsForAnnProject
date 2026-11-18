@@ -28,12 +28,15 @@ Enforces:
 - Anti-spam ownership comment guard (FR-055).
 """
 
+from email.utils import parsedate_to_datetime
 import json
+import math
 import os
 from pathlib import Path
 import random
 import time
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+import http.client
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -67,6 +70,14 @@ ALLOWED_OUTBOUND_HOSTS: Set[str] = {
 
 BACKOFF_SCHEDULE_SECONDS: Tuple[int, int, int] = (30, 60, 120)
 MAX_COMMENT_LENGTH_CHARS = 150
+BUSINESS_API = "https://business-api.tiktok.com/open_api/v1.3"
+
+
+class _NoRedirects(urllib.request.HTTPRedirectHandler):
+    """Never forward a TikTok credential across a redirect."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
 
 class TikTokAdapter:
@@ -248,7 +259,7 @@ class TikTokAdapter:
                 code="ERR_INSECURE_SCHEME",
             )
         host = (parsed.hostname or "").lower()
-        if host not in ALLOWED_OUTBOUND_HOSTS:
+        if host not in ALLOWED_OUTBOUND_HOSTS or parsed.netloc.lower() != host:
             raise SecurityConfigurationError(
                 f"Outbound host '{host}' is not in the TikTok allowlist {sorted(ALLOWED_OUTBOUND_HOSTS)}",
                 code="ERR_OUTBOUND_HOST_FORBIDDEN",
@@ -270,12 +281,16 @@ class TikTokAdapter:
             try:
                 header_delay = float(retry_after_header.strip())
             except ValueError:
-                header_delay = 0.0
+                try:
+                    header_delay = parsedate_to_datetime(retry_after_header).timestamp() - time.time()
+                except (ValueError, TypeError, OverflowError):
+                    header_delay = 0.0
+        if not math.isfinite(header_delay):
+            header_delay = 0.0
 
-        effective_base = max(base_delay, header_delay)
         rand_source = rng or random
-        jitter = effective_base * jitter_ratio * rand_source.uniform(-1.0, 1.0)
-        return max(1.0, round(effective_base + jitter, 2))
+        jitter = base_delay * jitter_ratio * rand_source.uniform(-1.0, 1.0)
+        return max(1.0, header_delay, round(base_delay + jitter, 2))
 
     def _trigger_fail_closed_downgrade(self, status_code: int, reason: str) -> None:
         """Immediately transition adapter to DRAFT / READ_ONLY on 401/403 (NFR-10)."""
@@ -309,6 +324,15 @@ class TikTokAdapter:
                 open_until_epoch=self.circuit_open_until_epoch,
             )
 
+    def _raise_rate_limit(self, headers: Dict[str, str], attempt: int) -> None:
+        retry_after = next((value for key, value in headers.items() if key.lower() == "retry-after"), None)
+        backoff = self.calculate_backoff_seconds(attempt=attempt, retry_after_header=retry_after)
+        self.rate_limit_cooldown_until_epoch = time.time() + backoff
+        self._record_audit("RATE_LIMIT", "COOLDOWN", {"backoff_seconds": backoff})
+        raise RateLimitExceededError(
+            f"TikTok API rate limit exceeded. Retry after {backoff}s.", retry_after_seconds=backoff
+        )
+
     def _execute_http_json(
         self,
         method: str,
@@ -317,18 +341,25 @@ class TikTokAdapter:
         json_body: Optional[Dict[str, Any]] = None,
         timeout_seconds: float = 10.0,
         attempt: int = 0,
+        send_access_token: bool = True,
     ) -> Dict[str, Any]:
         """Execute an allowlisted HTTPS request with circuit-breaker, 429 backoff, and 401/403 fail-closed handling."""
         self.validate_outbound_url(url)
         self._check_circuit_breaker()
+        cooldown = self.rate_limit_cooldown_until_epoch - time.time()
+        if cooldown > 0:
+            raise RateLimitExceededError("TikTok API is in its rate-limit cooldown.", cooldown)
 
         req_headers = {
             "Accept": "application/json",
             "Content-Type": "application/json; charset=utf-8",
         }
-        if self._access_token:
-            req_headers["Access-Token"] = self._access_token
-            req_headers["Authorization"] = f"Bearer {self._access_token}"
+        business_request = urllib.parse.urlparse(url).hostname == "business-api.tiktok.com"
+        if send_access_token and self._access_token:
+            if business_request:
+                req_headers["Access-Token"] = self._access_token
+            else:
+                req_headers["Authorization"] = f"Bearer {self._access_token}"
         if headers:
             req_headers.update(headers)
 
@@ -342,14 +373,15 @@ class TikTokAdapter:
             if self._http_transport is not None:
                 status_code, resp_headers, raw_resp = self._http_transport(request, timeout_seconds)
             else:
-                with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+                opener = urllib.request.build_opener(_NoRedirects())
+                with opener.open(request, timeout=timeout_seconds) as response:
                     status_code = int(response.getcode() or 200)
                     resp_headers = {k.lower(): v for k, v in response.info().items()}
-                    raw_resp = response.read()
+                    raw_resp = response.read(2_000_001)
         except urllib.error.HTTPError as http_err:
             status_code = int(http_err.code)
             resp_headers = {k.lower(): v for k, v in (http_err.headers.items() if http_err.headers else [])}
-            raw_resp = http_err.read() if http_err.fp else b"{}"
+            raw_resp = http_err.read(2_000_001) if http_err.fp else b"{}"
 
         if status_code in (401, 403):
             self._trigger_fail_closed_downgrade(status_code, "Upstream returned HTTP 401/403")
@@ -359,18 +391,7 @@ class TikTokAdapter:
             )
 
         if status_code == 429:
-            retry_after_hdr = None
-            for k, v in resp_headers.items():
-                if k.lower() == "retry-after":
-                    retry_after_hdr = v
-                    break
-            backoff = self.calculate_backoff_seconds(attempt=attempt, retry_after_header=retry_after_hdr)
-            self.rate_limit_cooldown_until_epoch = time.time() + backoff
-            self._record_audit("RATE_LIMIT_429", "COOLDOWN", {"backoff_seconds": backoff})
-            raise RateLimitExceededError(
-                f"TikTok API rate limit exceeded (HTTP 429). Retry after {backoff}s.",
-                retry_after_seconds=backoff,
-            )
+            self._raise_rate_limit(resp_headers, attempt)
 
         if status_code >= 500:
             self.consecutive_5xx_failures += 1
@@ -384,10 +405,11 @@ class TikTokAdapter:
                         "open_until_epoch": self.circuit_open_until_epoch,
                     },
                 )
-                raise CircuitBreakerOpenError(
-                    f"TikTok upstream failed {self.consecutive_5xx_failures} consecutive times (HTTP {status_code}). Circuit breaker OPEN.",
-                    open_until_epoch=self.circuit_open_until_epoch,
-                )
+                if method.upper() != "POST":
+                    raise CircuitBreakerOpenError(
+                        f"TikTok upstream failed {self.consecutive_5xx_failures} consecutive times (HTTP {status_code}). Circuit breaker OPEN.",
+                        open_until_epoch=self.circuit_open_until_epoch,
+                    )
             raise TikTokIntegrationError(
                 f"TikTok upstream server error (HTTP {status_code})",
                 code=f"ERR_UPSTREAM_{status_code}",
@@ -396,9 +418,72 @@ class TikTokAdapter:
         # Reset 5xx counter on any non-5xx response
         self.consecutive_5xx_failures = 0
 
-        if not raw_resp:
-            return {}
-        return json.loads(raw_resp.decode("utf-8"))
+        if not 200 <= status_code < 300:
+            raise TikTokIntegrationError(
+                f"TikTok returned HTTP {status_code}.", code=f"ERR_HTTP_{status_code}"
+            )
+        try:
+            if len(raw_resp) > 2_000_000:
+                raise ValueError("response too large")
+            payload = json.loads(raw_resp)
+            if not isinstance(payload, dict):
+                raise ValueError("expected a JSON object")
+        except (UnicodeError, ValueError) as error:
+            raise TikTokIntegrationError(
+                "TikTok returned an invalid JSON response.", code="ERR_INVALID_PROVIDER_RESPONSE"
+            ) from error
+
+        if business_request:
+            code = payload.get("code")
+            if isinstance(code, bool) or not isinstance(code, int):
+                raise TikTokIntegrationError(
+                    "TikTok Accounts API response has no numeric result code.",
+                    code="ERR_INVALID_PROVIDER_RESPONSE",
+                )
+            if code in (40001, 40105):
+                self._trigger_fail_closed_downgrade(status_code, f"TikTok result code {code}")
+                raise PermissionPolicyError(
+                    "TikTok rejected the current account permission or token.",
+                    code=f"ERR_TIKTOK_{code}_DOWNGRADED",
+                )
+            if code == 40100:
+                self._raise_rate_limit(resp_headers, attempt)
+            if code != 0:
+                raise TikTokIntegrationError(
+                    f"TikTok Accounts API returned result code {code}.", code=f"ERR_TIKTOK_{code}"
+                )
+            if not isinstance(payload.get("data"), dict):
+                raise TikTokIntegrationError(
+                    "TikTok Accounts API response is missing its result object.",
+                    code="ERR_INVALID_PROVIDER_RESPONSE",
+                )
+        return payload
+
+    def inspect_access_token(self, app_id: str) -> frozenset[str]:
+        """Validate the configured app, account and scopes directly with TikTok."""
+        self._granted_scopes.clear()
+        if self.sandbox_mode or not (app_id and self.business_id and self._access_token):
+            raise SecurityConfigurationError("TikTok app ID, account ID and Business access token are required.")
+        verified = self._execute_http_json(
+            "POST", f"{BUSINESS_API}/tt_user/token_info/get/",
+            json_body={"app_id": app_id, "access_token": self._access_token},
+            send_access_token=False,
+        )["data"]
+        if str(verified.get("app_id")) != app_id or verified.get("creator_id") != self.business_id:
+            self._trigger_fail_closed_downgrade(403, "TikTok returned a different app or account")
+            raise SecurityConfigurationError(
+                "TikTok token does not belong to the configured app and account.",
+                code="ERR_TOKEN_ACCOUNT_MISMATCH",
+            )
+        scopes = verified.get("scope")
+        if not isinstance(scopes, str):
+            raise TikTokIntegrationError(
+                "TikTok token inspection returned no permission scopes.",
+                code="ERR_INVALID_PROVIDER_RESPONSE",
+            )
+        self._auth_revoked_or_expired = False
+        self._granted_scopes.update(scope.strip() for scope in scopes.split(",") if scope.strip())
+        return frozenset(self._granted_scopes)
 
     def _require_capability_for_live_call(self, capability_name: str) -> CapabilityStatus:
         status = self.get_capability_status(capability_name)
@@ -412,6 +497,71 @@ class TikTokAdapter:
             missing = [s for s in req_scopes if s not in self._granted_scopes] or req_scopes
             raise ScopeNotApprovedError(capability=capability_name, missing_scopes=missing)
         return status
+
+    @staticmethod
+    def _provider_id(value: Any) -> str:
+        if isinstance(value, str):
+            return value.strip()
+        if type(value) is int and value > 0:
+            return str(value)
+        return ""
+
+    @staticmethod
+    def _provider_integer(value: Any) -> int:
+        if type(value) is int:
+            return max(value, 0)
+        if isinstance(value, str) and value.isascii() and value.isdecimal() and len(value) <= 20:
+            return int(value)
+        return 0
+
+    @staticmethod
+    def _page(payload: Dict[str, Any], items_key: str, cursor: int) -> tuple[list, dict]:
+        data = payload["data"]
+        rows = data.get(items_key)
+        has_more = data.get("has_more", False)
+        next_cursor = data.get("cursor", cursor)
+        if (
+            not isinstance(rows, list)
+            or not all(isinstance(row, dict) for row in rows)
+            or not isinstance(has_more, bool)
+            or type(next_cursor) is not int
+            or (has_more and next_cursor == cursor)
+        ):
+            raise TikTokIntegrationError(
+                "TikTok returned an invalid paginated result.", code="ERR_INVALID_PROVIDER_RESPONSE"
+            )
+        return rows, {"cursor": next_cursor, "has_more": has_more, "request_id": payload.get("request_id")}
+
+    def _parse_comment(self, item: Dict[str, Any], video_id: str, parent: str = "") -> TikTokComment:
+        comment_id = self._provider_id(item.get("comment_id"))
+        if not comment_id or self._provider_id(item.get("video_id", video_id)) != video_id:
+            raise TikTokIntegrationError(
+                "TikTok returned a comment without a matching video and comment ID.",
+                code="ERR_INVALID_PROVIDER_RESPONSE",
+            )
+        user_id = self._provider_id(item.get("unique_identifier") or item.get("user_id"))
+        username = str(item.get("username") or "")
+        parent_id = self._provider_id(item.get("parent_comment_id")) or parent
+        is_self = (
+            item.get("owner") is True
+            or user_id == self.business_id
+            or (bool(username) and username.lower().lstrip("@") == self.handle.lower().lstrip("@"))
+        )
+        return TikTokComment(
+            comment_id=comment_id,
+            video_id=video_id,
+            business_id=self.business_id,
+            text=str(item.get("text") or ""),
+            create_time=self._provider_integer(item.get("create_time")),
+            user_id=user_id,
+            username=username,
+            parent_comment_id=parent_id or None,
+            is_reply=bool(parent_id),
+            is_self_author=is_self,
+            status=str(item.get("status") or "UNKNOWN"),
+            like_count=self._provider_integer(item.get("likes")),
+            reply_count=self._provider_integer(item.get("replies")),
+        )
 
     # -------------------------------------------------------------------------
     # 12 Canonical Provider-Neutral Interface Methods
@@ -506,27 +656,34 @@ class TikTokAdapter:
                 metadata={"cursor": cursor, "has_more": False},
             )
 
-        query = urllib.parse.urlencode(
-            {"business_id": self.business_id, "cursor": cursor, "max_count": min(max_count, 20)}
-        )
-        url = f"https://business-api.tiktok.com/open_api/v1.3/business/video/list/?{query}"
+        query = urllib.parse.urlencode({
+            "business_id": self.business_id,
+            "fields": json.dumps(["item_id", "caption", "share_url", "create_time"]),
+            "cursor": cursor,
+            "max_count": max(1, min(max_count, 20)),
+        })
+        url = f"{BUSINESS_API}/business/video/list/?{query}"
         payload = self._execute_http_json("GET", url)
-        raw_videos = payload.get("data", {}).get("videos", [])
-        posts = [
-            TikTokPost(
-                video_id=str(v.get("item_id") or v.get("video_id")),
+        raw_videos, metadata = self._page(payload, "videos", cursor)
+        posts = []
+        for v in raw_videos:
+            video_id = self._provider_id(v.get("item_id"))
+            if not video_id:
+                raise TikTokIntegrationError(
+                    "TikTok returned a video without its item ID.", code="ERR_INVALID_PROVIDER_RESPONSE"
+                )
+            posts.append(TikTokPost(
+                video_id=video_id,
                 business_id=self.business_id,
                 caption=str(v.get("caption") or ""),
                 share_url=str(v.get("share_url") or ""),
-                create_time=int(v.get("create_time") or 0),
-                comment_count=int(v.get("comments") or 0),
-                like_count=int(v.get("likes") or 0),
-                view_count=int(v.get("video_views") or 0),
-                duration_seconds=int(v.get("duration") or 0),
+                create_time=self._provider_integer(v.get("create_time")),
+                comment_count=self._provider_integer(v.get("comments")),
+                like_count=self._provider_integer(v.get("likes")),
+                view_count=self._provider_integer(v.get("video_views")),
+                duration_seconds=self._provider_integer(v.get("video_duration")),
                 is_owned=True,
-            )
-            for v in raw_videos
-        ]
+            ))
         return ProviderResponse(
             ok=True,
             capability=cap_name,
@@ -534,6 +691,7 @@ class TikTokAdapter:
             operational_mode=self.operational_mode,
             connection_badge=self.get_connection_badge(),
             data=posts,
+            metadata=metadata,
         )
 
     def list_owned_comments(
@@ -542,6 +700,8 @@ class TikTokAdapter:
         cursor: int = 0,
         max_count: int = 20,
         include_replies: bool = True,
+        *,
+        comment_ids: Optional[List[str]] = None,
     ) -> ProviderResponse[List[TikTokComment]]:
         """3. List comments and replies on an owned TikTok video (`/open_api/v1.3/business/comment/list/`)."""
         cap_name = "list_owned_comments"
@@ -558,8 +718,16 @@ class TikTokAdapter:
                 fallback_action="WEBHOOK_OR_MANUAL_QUEUE",
             )
 
+        if comment_ids is not None and (
+            not isinstance(comment_ids, list) or not 1 <= len(comment_ids) <= 30
+            or not all(isinstance(item, str) and item.strip() for item in comment_ids)
+        ):
+            raise ValueError("TikTok comment lookup accepts between 1 and 30 non-empty comment IDs.")
+
         if self.sandbox_mode and self._http_transport is None:
             comments = list(self._sandbox_comments.get(video_id, []))
+            if comment_ids is not None:
+                comments = [comment for comment in comments if comment.comment_id in comment_ids]
             if not include_replies:
                 comments = [c for c in comments if not c.is_reply]
             return ProviderResponse(
@@ -569,43 +737,42 @@ class TikTokAdapter:
                 operational_mode=self.operational_mode,
                 connection_badge=self.get_connection_badge(),
                 data=comments[:max_count],
-                metadata={"video_id": video_id, "cursor": cursor},
+                metadata={"video_id": video_id, "cursor": cursor, "has_more": False},
             )
 
-        query = urllib.parse.urlencode(
-            {
-                "business_id": self.business_id,
-                "video_id": video_id,
-                "include_replies": "true" if include_replies else "false",
-                "cursor": cursor,
-                "max_results": min(max_count, 30),
-            }
-        )
-        url = f"https://business-api.tiktok.com/open_api/v1.3/business/comment/list/?{query}"
+        params = {
+            "business_id": self.business_id,
+            "video_id": video_id,
+            "include_replies": "true" if include_replies else "false",
+            "sort_field": "create_time",
+            "sort_order": "desc",
+            "cursor": cursor,
+            "max_count": max(1, min(max_count, 30)),
+        }
+        if comment_ids is not None:
+            params["comment_ids"] = json.dumps(comment_ids)
+        query = urllib.parse.urlencode(params)
+        url = f"{BUSINESS_API}/business/comment/list/?{query}"
         payload = self._execute_http_json("GET", url)
-        raw_comments = payload.get("data", {}).get("comments", [])
+        raw_comments, metadata = self._page(payload, "comments", cursor)
         parsed_comments: List[TikTokComment] = []
+        seen: set[str] = set()
         for item in raw_comments:
-            uid = str(item.get("user_id") or "")
-            uname = str(item.get("username") or "")
-            parent_id = item.get("parent_comment_id")
-            is_self = bool(uid == self.business_id or uname.lower().lstrip("@") == "annreveals")
-            parsed_comments.append(
-                TikTokComment(
-                    comment_id=str(item.get("comment_id")),
-                    video_id=video_id,
-                    business_id=self.business_id,
-                    text=str(item.get("text") or ""),
-                    create_time=int(item.get("create_time") or 0),
-                    user_id=uid,
-                    username=uname,
-                    parent_comment_id=str(parent_id) if parent_id else None,
-                    is_reply=bool(parent_id),
-                    is_self_author=is_self,
-                    status=str(item.get("status") or "PUBLIC"),
-                    like_count=int(item.get("likes") or 0),
-                )
-            )
+            comment = self._parse_comment(item, video_id)
+            if comment.comment_id not in seen:
+                parsed_comments.append(comment)
+                seen.add(comment.comment_id)
+            if include_replies:
+                replies = item.get("reply_list", [])
+                if not isinstance(replies, list) or not all(isinstance(reply, dict) for reply in replies):
+                    raise TikTokIntegrationError(
+                        "TikTok returned an invalid reply list.", code="ERR_INVALID_PROVIDER_RESPONSE"
+                    )
+                for reply in replies:
+                    parsed_reply = self._parse_comment(reply, video_id, comment.comment_id)
+                    if parsed_reply.comment_id not in seen:
+                        parsed_comments.append(parsed_reply)
+                        seen.add(parsed_reply.comment_id)
         return ProviderResponse(
             ok=True,
             capability=cap_name,
@@ -613,6 +780,61 @@ class TikTokAdapter:
             operational_mode=self.operational_mode,
             connection_badge=self.get_connection_badge(),
             data=parsed_comments,
+            metadata={**metadata, "video_id": video_id},
+        )
+
+    def list_comment_replies(
+        self, video_id: str, comment_id: str, cursor: int = 0, max_count: int = 20
+    ) -> ProviderResponse[List[TikTokComment]]:
+        """Read back a comment's replies for duplicate prevention and reconciliation."""
+        cap_name = "list_comment_replies"
+        status = self.get_capability_status(cap_name)
+        if status != CapabilityStatus.VERIFIED_ACTIVE:
+            return ProviderResponse(
+                ok=False,
+                capability=cap_name,
+                capability_status=status,
+                operational_mode=self.operational_mode,
+                connection_badge=self.get_connection_badge(),
+                error_code="ERR_AWAITING_APPROVAL",
+                fallback_action="WEBHOOK_OR_MANUAL_QUEUE",
+            )
+        limit = max(1, min(max_count, 30))
+        if self.sandbox_mode and self._http_transport is None:
+            replies = [
+                comment for comment in self._sandbox_comments.get(video_id, [])
+                if comment.parent_comment_id == comment_id
+            ]
+            next_cursor = cursor + limit
+            return ProviderResponse(
+                ok=True,
+                capability=cap_name,
+                capability_status=status,
+                operational_mode=self.operational_mode,
+                connection_badge=self.get_connection_badge(),
+                data=replies[cursor:next_cursor],
+                metadata={"cursor": next_cursor, "has_more": next_cursor < len(replies)},
+            )
+        query = urllib.parse.urlencode({
+            "business_id": self.business_id,
+            "video_id": video_id,
+            "comment_id": comment_id,
+            "status": "ALL",
+            "sort_field": "create_time",
+            "sort_order": "desc",
+            "cursor": cursor,
+            "max_count": limit,
+        })
+        payload = self._execute_http_json("GET", f"{BUSINESS_API}/business/comment/reply/list/?{query}")
+        replies, metadata = self._page(payload, "comments", cursor)
+        return ProviderResponse(
+            ok=True,
+            capability=cap_name,
+            capability_status=status,
+            operational_mode=self.operational_mode,
+            connection_badge=self.get_connection_badge(),
+            data=[self._parse_comment(reply, video_id, comment_id) for reply in replies],
+            metadata=metadata,
         )
 
     def reply_to_owned_comment(
@@ -623,7 +845,7 @@ class TikTokAdapter:
         idempotency_key: str,
         strict_write_check: bool = False,
     ) -> ProviderResponse[CommentWriteResult]:
-        """4. Reply to an existing comment on an owned TikTok video (`POST /open_api/v1.3/business/comment/reply/`).
+        """4. Reply to an existing comment on an owned TikTok video via Accounts API.
 
         Enforces:
         - Idempotency deduplication (NFR-03, NFR-04).
@@ -731,7 +953,7 @@ class TikTokAdapter:
                 data=sent_result,
             )
 
-        url = "https://business-api.tiktok.com/open_api/v1.3/business/comment/reply/"
+        url = f"{BUSINESS_API}/business/comment/reply/create/"
         body = {
             "business_id": self.business_id,
             "video_id": video_id,
@@ -740,6 +962,17 @@ class TikTokAdapter:
         }
         try:
             payload = self._execute_http_json("POST", url, json_body=body)
+            data = payload["data"]
+            created_id = self._provider_id(data.get("comment_id"))
+            if (
+                not created_id
+                or created_id == comment_id
+                or self._provider_id(data.get("parent_comment_id", comment_id)) != comment_id
+                or self._provider_id(data.get("video_id", video_id)) != video_id
+            ):
+                raise TikTokIntegrationError(
+                    "TikTok did not return a matching reply ID.", code="ERR_INVALID_PROVIDER_RESPONSE"
+                )
         except PermissionPolicyError:
             # 401/403 triggered fail-closed downgrade to DRAFT (NFR-10)
             downgraded_result = CommentWriteResult(
@@ -765,8 +998,16 @@ class TikTokAdapter:
                 error_message="TikTok returned 401/403; adapter automatically downgraded to DRAFT mode.",
                 fallback_action="RECONNECT_AND_MANUAL_COPY",
             )
-        except TimeoutError:
-            # NFR-03: Mark as RECONCILE_PENDING on network timeout to prevent duplicate replies
+        except (OSError, http.client.HTTPException, TikTokIntegrationError) as error:
+            # A response can go missing after TikTok has accepted the reply.
+            if isinstance(error, TikTokIntegrationError) and not (
+                error.code == "ERR_INVALID_PROVIDER_RESPONSE" or error.code.startswith("ERR_UPSTREAM_")
+            ):
+                raise
+            error_code = (
+                "ERR_TIMEOUT_RECONCILE_PENDING" if isinstance(error, TimeoutError)
+                else "ERR_UNCERTAIN_RECONCILE_PENDING"
+            )
             reconcile_result = CommentWriteResult(
                 video_id=video_id,
                 text=clean_text,
@@ -776,7 +1017,7 @@ class TikTokAdapter:
                 comment_id=None,
                 parent_comment_id=comment_id,
                 fallback_copy_text=clean_text,
-                audit_note="Network timeout during POST; marked RECONCILE_PENDING (NFR-03).",
+                audit_note="TikTok dispatch could not be confirmed. Read back the thread before any retry.",
             )
             self._idempotency_store[idempotency_key] = reconcile_result
             return ProviderResponse(
@@ -786,11 +1027,10 @@ class TikTokAdapter:
                 operational_mode=self.operational_mode,
                 connection_badge=self.get_connection_badge(),
                 data=reconcile_result,
-                error_code="ERR_TIMEOUT_RECONCILE_PENDING",
-                error_message="Request timed out; comment state is RECONCILE_PENDING.",
+                error_code=error_code,
+                error_message="TikTok dispatch could not be confirmed. The reply remains pending reconciliation.",
             )
 
-        created_id = str(payload.get("data", {}).get("comment_id") or f"tt_live_{int(time.time())}")
         live_result = CommentWriteResult(
             video_id=video_id,
             text=clean_text,
@@ -799,7 +1039,7 @@ class TikTokAdapter:
             capability_status=status,
             comment_id=created_id,
             parent_comment_id=comment_id,
-            audit_note="Sent via TikTok Accounts API v1.3 /business/comment/reply/.",
+            audit_note="TikTok Accounts API returned the reply ID.",
         )
         self._idempotency_store[idempotency_key] = live_result
         return ProviderResponse(
@@ -809,6 +1049,7 @@ class TikTokAdapter:
             operational_mode=self.operational_mode,
             connection_badge=self.get_connection_badge(),
             data=live_result,
+            metadata={"request_id": payload.get("request_id")},
         )
 
     def create_comment_on_owned_post(
