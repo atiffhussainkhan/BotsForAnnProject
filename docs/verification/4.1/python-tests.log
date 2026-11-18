@@ -1,0 +1,105 @@
+test_all_14_categories_classified_accurately (ai.test_ai_engine.TestAgentCharlieAIEngine.test_all_14_categories_classified_accurately) ... ok
+test_budget_cap_and_pluggable_llm_adapter_fallback (ai.test_ai_engine.TestAgentCharlieAIEngine.test_budget_cap_and_pluggable_llm_adapter_fallback) ... ok
+test_creator_watchlist_blocks_scraping_and_bulk_autocomment (ai.test_ai_engine.TestAgentCharlieAIEngine.test_creator_watchlist_blocks_scraping_and_bulk_autocomment) ... ok
+test_creator_watchlist_lawful_ingestion_and_contextual_drafts (ai.test_ai_engine.TestAgentCharlieAIEngine.test_creator_watchlist_lawful_ingestion_and_contextual_drafts) ... ok
+test_creator_watchlist_snooze_and_daily_cap (ai.test_ai_engine.TestAgentCharlieAIEngine.test_creator_watchlist_snooze_and_daily_cap) ... ok
+test_experian_vs_empyrean_merchant_grounding (ai.test_ai_engine.TestAgentCharlieAIEngine.test_experian_vs_empyrean_merchant_grounding) ... ok
+test_longevity_measured_vs_unmeasured_grounding (ai.test_ai_engine.TestAgentCharlieAIEngine.test_longevity_measured_vs_unmeasured_grounding) ... ok
+test_multilingual_detection_and_reply (ai.test_ai_engine.TestAgentCharlieAIEngine.test_multilingual_detection_and_reply) ... ok
+test_pii_redaction_before_storage_or_llm (ai.test_ai_engine.TestAgentCharlieAIEngine.test_pii_redaction_before_storage_or_llm) ... ok
+test_prompt_injection_and_payload_attacks_blocked (ai.test_ai_engine.TestAgentCharlieAIEngine.test_prompt_injection_and_payload_attacks_blocked) ... ok
+test_self_comment_loop_prevention (ai.test_ai_engine.TestAgentCharlieAIEngine.test_self_comment_loop_prevention) ... ok
+test_sensitive_skin_and_child_safety_escalation (ai.test_ai_engine.TestAgentCharlieAIEngine.test_sensitive_skin_and_child_safety_escalation) ... ok
+test_template_catalog_exceeds_1200_variations_and_prevents_duplicates (ai.test_ai_engine.TestAgentCharlieAIEngine.test_template_catalog_exceeds_1200_variations_and_prevents_duplicates) ... ok
+test_was_this_gifted_provenance_and_commercial_matrix (ai.test_ai_engine.TestAgentCharlieAIEngine.test_was_this_gifted_provenance_and_commercial_matrix) ... ok
+test_01_pii_and_payment_redactor (compliance.test_provenance_and_compliance.TestAgentDeltaProvenanceAndCompliance.test_01_pii_and_payment_redactor)
+Verify deterministic scrubbing of PANs, Last-4, IBAN, Sort Code, Address, Postcode, Email, Phone, and Barcode. ... ok
+test_02_experian_vs_empyrean_merchant_normalizer_guard (compliance.test_provenance_and_compliance.TestAgentDeltaProvenanceAndCompliance.test_02_experian_vs_empyrean_merchant_normalizer_guard)
+Verify FR-019 / FR-051: ... ok
+test_03_thirty_fictional_receipt_edge_cases (compliance.test_provenance_and_compliance.TestAgentDeltaProvenanceAndCompliance.test_03_thirty_fictional_receipt_edge_cases)
+Test all 30 mandatory receipt edge cases across: ... ok
+test_04_ten_mandatory_compliance_scenarios (compliance.test_provenance_and_compliance.TestAgentDeltaProvenanceAndCompliance.test_04_ten_mandatory_compliance_scenarios)
+Verify all 10 mandatory compliance scenarios across Instagram and TikTok. ... ok
+test_05_anti_spam_ownership_comment_rotation (compliance.test_provenance_and_compliance.TestAgentDeltaProvenanceAndCompliance.test_05_anti_spam_ownership_comment_rotation)
+Verify FR-025 & FR-055: ... ok
+test_06_retroactive_receipt_contradiction_guard_fr058 (compliance.test_provenance_and_compliance.TestAgentDeltaProvenanceAndCompliance.test_06_retroactive_receipt_contradiction_guard_fr058)
+Verify FR-058: ... ok
+test_07_violation_intake_automation_freeze_and_redacted_appeal_packet (compliance.test_provenance_and_compliance.TestAgentDeltaProvenanceAndCompliance.test_07_violation_intake_automation_freeze_and_redacted_appeal_packet)
+Verify FR-029 to FR-033 and Rule G6: ... ok
+test_01_database_19_tables_created (e2e.test_full_system.TestFullSystemE2E.test_01_database_19_tables_created) ... ok
+test_02_pwa_manifest_service_worker_and_9_screens (e2e.test_full_system.TestFullSystemE2E.test_02_pwa_manifest_service_worker_and_9_screens) ... ok
+test_03_overview_truthful_badges_and_feature_flags (e2e.test_full_system.TestFullSystemE2E.test_03_overview_truthful_badges_and_feature_flags) ... ok
+test_04_comment_simulation_and_duplicate_prevention (e2e.test_full_system.TestFullSystemE2E.test_04_comment_simulation_and_duplicate_prevention) ... ok
+test_05_sample_cases_a_and_b_and_studio_generation (e2e.test_full_system.TestFullSystemE2E.test_05_sample_cases_a_and_b_and_studio_generation) ... ok
+test_06_vault_pii_redaction_and_experian_empyrean_confirmation (e2e.test_full_system.TestFullSystemE2E.test_06_vault_pii_redaction_and_experian_empyrean_confirmation) ... ok
+test_07_friends_watchlist_and_appeals_freeze (e2e.test_full_system.TestFullSystemE2E.test_07_friends_watchlist_and_appeals_freeze) ... ok
+test_08_emergency_stop_backup_drills_and_gdpr_export (e2e.test_full_system.TestFullSystemE2E.test_08_emergency_stop_backup_drills_and_gdpr_export) ... ok
+test_09_in_app_account_configuration_and_autopilot_worker (e2e.test_full_system.TestFullSystemE2E.test_09_in_app_account_configuration_and_autopilot_worker) ... ok
+test_10_friend_groups_auto_comment_bot (e2e.test_full_system.TestFullSystemE2E.test_10_friend_groups_auto_comment_bot) ... ok
+test_imported_comment_facts_and_redacted_purchase_survive_restart (e2e.test_tiktok_worker.TestManualCommentWorkflow.test_imported_comment_facts_and_redacted_purchase_survive_restart) ... ok
+test_bounded_page_reader_resumes_after_its_work_limit (e2e.test_tiktok_worker.TestOwnedTikTokWorkflow.test_bounded_page_reader_resumes_after_its_work_limit) ... ok
+test_container_flag_cannot_enable_an_unauthenticated_network_listener (e2e.test_tiktok_worker.TestOwnedTikTokWorkflow.test_container_flag_cannot_enable_an_unauthenticated_network_listener) ... ok
+test_duplicate_automatic_reply_text_is_held_for_owner_review (e2e.test_tiktok_worker.TestOwnedTikTokWorkflow.test_duplicate_automatic_reply_text_is_held_for_owner_review) ... ok
+test_missing_provider_identifier_remains_pending (e2e.test_tiktok_worker.TestOwnedTikTokWorkflow.test_missing_provider_identifier_remains_pending) ... ok
+test_owner_http_boundary_uses_correct_pwa_mime_and_blocks_cross_origin (e2e.test_tiktok_worker.TestOwnedTikTokWorkflow.test_owner_http_boundary_uses_correct_pwa_mime_and_blocks_cross_origin) ... ok
+test_post_violation_freeze_survives_restart (e2e.test_tiktok_worker.TestOwnedTikTokWorkflow.test_post_violation_freeze_survives_restart) ... ok
+test_reconciliation_rotates_through_all_pending_comments (e2e.test_tiktok_worker.TestOwnedTikTokWorkflow.test_reconciliation_rotates_through_all_pending_comments) ... ok
+test_unauthorized_verification_and_persistent_emergency_stop (e2e.test_tiktok_worker.TestOwnedTikTokWorkflow.test_unauthorized_verification_and_persistent_emergency_stop) ... ok
+test_unknown_reply_is_reconciled_after_restart_without_resend (e2e.test_tiktok_worker.TestOwnedTikTokWorkflow.test_unknown_reply_is_reconciled_after_restart_without_resend) ... ok
+test_verified_pilot_then_automatic_reply_to_new_owned_comment (e2e.test_tiktok_worker.TestOwnedTikTokWorkflow.test_verified_pilot_then_automatic_reply_to_new_owned_comment) ... ok
+test_warning_during_provider_readback_prevents_dispatch (e2e.test_tiktok_worker.TestOwnedTikTokWorkflow.test_warning_during_provider_readback_prevents_dispatch) ... ok
+test_401_403_token_revocation_fail_safe (instagram.test_instagram_adapter.TestInstagramAdapterAndWebhooks.test_401_403_token_revocation_fail_safe)
+Verify HTTP 401/403 (Meta Code 190) transitions adapter to Needs reconnect + DRAFT and disables writes. ... ok
+test_forbidden_nonowned_post_commenting_and_following_feed (instagram.test_instagram_adapter.TestInstagramAdapterAndWebhooks.test_forbidden_nonowned_post_commenting_and_following_feed)
+Verify comment_on_nonowned_post and get_following_posts are permanently blocked. ... ok
+test_rate_limit_backoff_handling (instagram.test_instagram_adapter.TestInstagramAdapterAndWebhooks.test_rate_limit_backoff_handling)
+Verify HTTP 429 / Meta error code 4 surfaces Retry-After seconds. ... ok
+test_sandbox_comment_read_and_reply_flow_with_write_gate (instagram.test_instagram_adapter.TestInstagramAdapterAndWebhooks.test_sandbox_comment_read_and_reply_flow_with_write_gate)
+Verify default write gate blocks writes until enabled, then sandbox read/reply/ownership comment succeed. ... ok
+test_self_reply_loop_prevention_in_adapter (instagram.test_instagram_adapter.TestInstagramAdapterAndWebhooks.test_self_reply_loop_prevention_in_adapter)
+Verify adapter refuses to reply to @annreveals's own comments (FR-003). ... ok
+test_timeout_reconciliation_prevents_duplicate_replies (instagram.test_instagram_adapter.TestInstagramAdapterAndWebhooks.test_timeout_reconciliation_prevents_duplicate_replies)
+Verify RECONCILE_PENDING checks GET /{comment-id}/replies before retry and prevents duplicate POST. ... ok
+test_webhook_hmac_sha256_verification_and_deduplication (instagram.test_instagram_adapter.TestInstagramAdapterAndWebhooks.test_webhook_hmac_sha256_verification_and_deduplication)
+Verify X-Hub-Signature-256 HMAC-SHA256 check, self-comment filtering, and deduplication. ... ok
+test_webhook_subscription_challenge (instagram.test_instagram_adapter.TestInstagramAdapterAndWebhooks.test_webhook_subscription_challenge)
+Verify GET hub.mode=subscribe challenge handshake and 403 rejection on mismatch. ... ok
+test_empty_payload_and_key_rotation_keep_readability (platform.test_aes_encryption.TestAESGCMEnvelope.test_empty_payload_and_key_rotation_keep_readability) ... ok
+test_existing_v1_record_migrates_to_v2_and_preserves_context (platform.test_aes_encryption.TestAESGCMEnvelope.test_existing_v1_record_migrates_to_v2_and_preserves_context) ... ok
+test_new_writes_use_fresh_gcm_nonce_and_authenticated_metadata (platform.test_aes_encryption.TestAESGCMEnvelope.test_new_writes_use_fresh_gcm_nonce_and_authenticated_metadata) ... ok
+test_10000_duplicate_webhook_stress (platform.test_platform_sre.TestPlatformSecurityAndSRE.test_10000_duplicate_webhook_stress)
+Stress test: Inject 10,000 webhook comment events (500 unique comments replayed 20x each) ... ok
+test_budget_cap_auto_downgrade_to_draft_and_templates (platform.test_platform_sre.TestPlatformSecurityAndSRE.test_budget_cap_auto_downgrade_to_draft_and_templates)
+Verify FR-039, FR-050, NFR-07: Hard £30.00 monthly ceiling & £5.00 AI sub-cap ... ok
+test_chaos_failure_drills_429_401_5xx_db_degraded (platform.test_platform_sre.TestPlatformSecurityAndSRE.test_chaos_failure_drills_429_401_5xx_db_degraded)
+Verify NFR-01, NFR-02, NFR-10: Execute all 4 chaos drills (`429`, `401`, `5xx`, `db_degraded`) ... ok
+test_encrypted_backup_and_restore_roundtrip_and_tamper_rejection (platform.test_platform_sre.TestPlatformSecurityAndSRE.test_encrypted_backup_and_restore_roundtrip_and_tamper_rejection)
+Verify FR-044 & NFR-08: Encrypted snapshot creation, SHA-256 manifest verification, ... ok
+test_gdpr_redaction_export_and_erasure (platform.test_platform_sre.TestPlatformSecurityAndSRE.test_gdpr_redaction_export_and_erasure)
+Verify FR-019, FR-044, FR-051, NFR-06: PII redaction (preserving raw `Experian`/`Empyrean`), ... ok
+test_oauth_encryption_key_rotation_and_tamper_detection (platform.test_platform_sre.TestPlatformSecurityAndSRE.test_oauth_encryption_key_rotation_and_tamper_detection)
+Verify NFR-05 & FR-044: AES-GCM authenticated envelope encryption for OAuth grants, ... ok
+test_universal_emergency_stop_halts_and_drains_queue_immediately (platform.test_platform_sre.TestPlatformSecurityAndSRE.test_universal_emergency_stop_halts_and_drains_queue_immediately)
+Verify FR-035 & NFR-09: Default feature flags are False, truthful badges work, ... ok
+test_webhook_hmac_pkce_csrf_rbac_and_log_scrubber (platform.test_platform_sre.TestPlatformSecurityAndSRE.test_webhook_hmac_pkce_csrf_rbac_and_log_scrubber)
+Verify PKCE S256, signed OAuth state, Webhook HMAC, CSRF, RBAC, and SecretScrubber. ... ok
+test_business_webhook_accepts_serialized_content_from_configured_app_and_account (tiktok.test_business_transport.TestBusinessTransport.test_business_webhook_accepts_serialized_content_from_configured_app_and_account) ... ok
+test_pagination_shape_cannot_claim_success_without_a_moving_cursor (tiktok.test_business_transport.TestBusinessTransport.test_pagination_shape_cannot_claim_success_without_a_moving_cursor) ... ok
+test_permission_inspector_binds_app_and_account_and_uses_provider_scopes (tiktok.test_business_transport.TestBusinessTransport.test_permission_inspector_binds_app_and_account_and_uses_provider_scopes) ... ok
+test_provider_rate_limit_blocks_followup_before_transport (tiktok.test_business_transport.TestBusinessTransport.test_provider_rate_limit_blocks_followup_before_transport) ... ok
+test_reads_provider_video_pages_and_comment_ownership (tiktok.test_business_transport.TestBusinessTransport.test_reads_provider_video_pages_and_comment_ownership) ... ok
+test_reads_reply_thread_back_with_required_tiktok_identifiers (tiktok.test_business_transport.TestBusinessTransport.test_reads_reply_thread_back_with_required_tiktok_identifiers) ... ok
+test_rejected_or_unconfirmed_dispatches_never_report_sent (tiktok.test_business_transport.TestBusinessTransport.test_rejected_or_unconfirmed_dispatches_never_report_sent) ... ok
+test_reply_requires_an_upstream_id_and_preserves_the_confirmed_id (tiktok.test_business_transport.TestBusinessTransport.test_reply_requires_an_upstream_id_and_preserves_the_confirmed_id) ... ok
+test_401_403_fail_closed_auto_downgrade_to_draft (tiktok.test_tiktok_adapter.TestTikTokIntegrationSuite.test_401_403_fail_closed_auto_downgrade_to_draft) ... ok
+test_forbidden_third_party_commenting_and_following_scrape (tiktok.test_tiktok_adapter.TestTikTokIntegrationSuite.test_forbidden_third_party_commenting_and_following_scrape) ... ok
+test_outbound_url_allowlist_and_scope_enforcement (tiktok.test_tiktok_adapter.TestTikTokIntegrationSuite.test_outbound_url_allowlist_and_scope_enforcement) ... ok
+test_rate_limit_backoff_and_5xx_circuit_breaker (tiktok.test_tiktok_adapter.TestTikTokIntegrationSuite.test_rate_limit_backoff_and_5xx_circuit_breaker) ... ok
+test_sandbox_comment_read_reply_and_provenance_guards (tiktok.test_tiktok_adapter.TestTikTokIntegrationSuite.test_sandbox_comment_read_reply_and_provenance_guards) ... ok
+test_webhook_signature_and_replay_defense (tiktok.test_tiktok_adapter.TestTikTokIntegrationSuite.test_webhook_signature_and_replay_defense) ... ok
+test_write_disabled_default_guard (tiktok.test_tiktok_adapter.TestTikTokIntegrationSuite.test_write_disabled_default_guard) ... ok
+
+----------------------------------------------------------------------
+Ran 77 tests in 16.777s
+
+OK

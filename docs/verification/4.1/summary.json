@@ -1,0 +1,25 @@
+{
+  "checked_at": "2026-11-18T19:48:49.341960+00:00",
+  "revision": "fa7124877b92a2029173134787aa98aea01e45ff",
+  "python": "3.11.17",
+  "system": "macOS-26.7.1-x86_64-i386-64bit",
+  "cryptography": "48.0.1",
+  "checks": [
+    {
+      "check": "python-tests",
+      "exit_code": 0,
+      "log": "python-tests.log"
+    },
+    {
+      "check": "web-tests",
+      "exit_code": 0,
+      "log": "web-tests.log"
+    }
+  ],
+  "provider_calls": "Live TikTok and Instagram verification requires a separately configured account.",
+  "python_tests": 77,
+  "web_tests": 6,
+  "real_browser": "Imported drafts, confirmed facts, redacted receipts, backup restore, and persistence across app restart on Intel macOS.",
+  "live_tiktok": "Pending provider access and controlled live verification.",
+  "device_installation": "Unverified."
+}

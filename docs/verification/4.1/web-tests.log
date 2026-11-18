@@ -1,0 +1,40 @@
+TAP version 13
+# Subtest: provider failures remain visible without fabricating connection or sync results
+ok 1 - provider failures remain visible without fabricating connection or sync results
+  ---
+  duration_ms: 5.994642
+  ...
+# Subtest: pilot display is read-only until an owner selects a stored draft, then enables SAFE_AUTO from server proof
+ok 2 - pilot display is read-only until an owner selects a stored draft, then enables SAFE_AUTO from server proof
+  ---
+  duration_ms: 2.74829
+  ...
+# Subtest: social content stays text and copied drafts do not supply inline handlers
+ok 3 - social content stays text and copied drafts do not supply inline handlers
+  ---
+  duration_ms: 4.004425
+  ...
+# Subtest: install manifest references correctly sized PNG icons
+ok 4 - install manifest references correctly sized PNG icons
+  ---
+  duration_ms: 3.029206
+  ...
+# Subtest: worker replaces its old cache and only caches public offline files
+ok 5 - worker replaces its old cache and only caches public offline files
+  ---
+  duration_ms: 33.949071
+  ...
+# Subtest: offline navigation has a fallback, while APIs and authentication still use the network
+ok 6 - offline navigation has a fallback, while APIs and authentication still use the network
+  ---
+  duration_ms: 5.818478
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 181.154923
